@@ -14,5 +14,15 @@ python3 tests/cli_tests.py
     tests/voter_tests.cpp src/voter.cpp -o build/voter_tests
 ./build/voter_tests
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Wpedantic -pthread -Isrc \
+    tests/protocol_tests.cpp src/requester.cpp src/voter.cpp -o build/protocol_tests
+./build/protocol_tests
+service_sources=(src/config.cpp src/requester.cpp src/voter.cpp src/mutex_service.cpp)
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Wpedantic -pthread -Isrc \
+    tests/service_tests.cpp "${service_sources[@]}" -o build/service_tests
+./build/service_tests
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Wpedantic -pthread -Isrc \
     tests/network_node.cpp src/config.cpp src/message.cpp src/network.cpp -o build/network_node
 python3 tests/network_tests.py
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Wpedantic -pthread -Isrc \
+    tests/service_node.cpp "${service_sources[@]}" src/network.cpp src/message.cpp -o build/service_node
+python3 tests/service_network_tests.py

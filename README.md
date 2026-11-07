@@ -1,6 +1,6 @@
 # Advanced Operating Systems Project 2
 
-C++17 and POSIX TCP. The planned service uses one protocol worker per node,
+C++17 and POSIX TCP. The service uses one protocol worker per node,
 a full TCP mesh, and the supplied Maekawa quorums. Deliverable 2 adds a TCP
 observer. Performance experiments and the second algorithm are outside this stage.
 
@@ -16,7 +16,7 @@ config=configs/local-3nodes.txt
 ```
 
 Currently `main` validates configuration and node selection only. The transport
-is exercised by `build/network_node`, compiled by `scripts/test.sh`. The mutex,
+and mutex service run in test executables compiled by `scripts/test.sh`. The
 application, launcher, cleanup, and checker are added in later commits.
 Tests additionally require Python 3. Generated binaries and test fixtures go in
 `build/`; run logs will go in `logs/`. Neither directory is committed.
@@ -30,10 +30,42 @@ Relinquishment requeues the holder and grants the current queue minimum. Release
 discards the holder. Both messages must match the holder's complete identity.
 Completed request sequences remain recorded so old requests cannot regain votes.
 
-The voter returns outgoing messages without sockets or threads. The next commit's
-single protocol worker will own it alongside requester state. Tests cover the
+The voter returns outgoing messages without sockets or threads. A single
+protocol worker owns it alongside requester state. Tests cover the
 paper's voter-13 scenario, including request 3 overtaking request 7 while an inquiry
 is pending, priority ties, stale messages, and release instead of relinquishment.
+
+## Requester and blocking API
+
+`MutexService::cs_enter()` waits until its request holds every supplied quorum
+vote. `cs_leave()` waits until all releases have been dispatched (not necessarily
+received remotely). One application thread calls these in pairs. A condition
+variable releases the queue mutex while either call waits, so receivers and the
+worker continue serving other requesters. Invalid calls and run failures throw.
+
+Only the worker changes the requester, voter, or sequence clock. New requests
+use a sequence above every request sequence it has processed. Self-messages go
+back through its event queue, preserving local order without recursive handlers.
+Replies contain the full request identity; replies to old requests cannot add
+votes to a new one. The requester enters its CS state before waking the caller.
+
+An inquiry is deferred until a failure makes relinquishment possible. Returning
+a vote removes it from the held set and marks it unavailable until regranted;
+this also permits further pending inquiries to be answered. A replacement grant
+clears that voter's unavailable status. Inside the CS, inquiries never return
+votes: only `cs_leave()` releases them.
+
+Transport callbacks enqueue messages or report failure. A send/receive failure
+wakes blocked API calls; `checkHealth()` reports failure when the application is
+not blocked. `stop()` aborts outstanding work and joins the worker. Stop the
+service and then the network while both objects remain alive, before destroying
+callback targets. Normal run-wide completion still needs the application layer.
+
+Tests force the paper's three-request cycle in both inquiry/failure orders and
+check 2,400 entries over 40 reproducible FIFO schedules. API tests cover self-voting,
+concurrent workers, stale grants, clock advancement, and failure wakeups. Local TCP
+tests keep an early finisher alive as a voter until every application completes.
+These checks do not replace the Deliverable 2 observer or cluster validation.
 
 ## Transport
 
@@ -51,12 +83,12 @@ and is not interrupted by the socket deadline. There is no reconnect/replay.
 
 Frames are fixed at 24 bytes with explicit big-endian encoding. Each peer has a
 receiver thread and a write mutex. Receivers invoke callbacks in per-peer FIFO
-order. Future service callbacks will enqueue events for one protocol worker,
+order. Service callbacks enqueue events for one protocol worker,
 which alone changes Maekawa state and orders its outgoing messages. Self-voting
-will use local events; sending to oneself through `Network` is an error.
+uses local events; sending to oneself through `Network` is an error.
 
-Read errors reach an error callback; send/setup errors throw. The service must
-fail the run and wake blocked callers on either path. Stop producers before
+Read errors reach an error callback; send/setup errors throw. The service
+wakes blocked callers on a send/receive failure. Stop producers before
 calling `stop()` from the owning thread, and keep callback targets alive until
 it returns. Error callbacks must not throw. The transport does not decide global
 completion; the application's voting/drain lifecycle comes in a later commit.
@@ -65,7 +97,7 @@ The tests exchange 128 ordered messages per peer in a three-process mesh and
 check a single-node setup, fragmented/combined frames, invalid messages and
 handshakes, missing peers, disconnects, and stalled reads/writes. They use only
 localhost, temporary ports, and their own child processes. They are transport
-tests, not mutual-exclusion tests.
+tests; the separate service and protocol tests exercise mutual exclusion.
 
 ## Configuration interpretations
 
