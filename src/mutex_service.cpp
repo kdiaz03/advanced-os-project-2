@@ -20,6 +20,7 @@ void MutexService::start() {
     started_ = true;
 }
 
+// call with the queue mutex held when inspecting shared run status.
 void MutexService::requireRunning() const {
     if (!error_.empty()) throw std::runtime_error(error_);
     if (!started_ || stopping_) throw std::runtime_error("Mutex service is not running");
@@ -32,6 +33,7 @@ void MutexService::cs_enter() {
     callState_ = CallState::waiting;
     events_.push_back({EventType::enter, {}});
     cv_.notify_all();
+    // waiting releases the mutex, allowing receivers and the protocol worker to progress.
     cv_.wait(lock, [&] { return callState_ == CallState::granted || stopping_ || !error_.empty(); });
     requireRunning();
 }
@@ -43,10 +45,12 @@ void MutexService::cs_leave() {
     callState_ = CallState::leaving;
     events_.push_back({EventType::leave, {}});
     cv_.notify_all();
+    // return after releases are dispatched, not after every remote voter acknowledges them.
     cv_.wait(lock, [&] { return callState_ == CallState::idle || stopping_ || !error_.empty(); });
     requireRunning();
 }
 
+// receiver threads enqueue messages instead of modifying requester or voter state.
 void MutexService::onMessage(const Message& message) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stopping_ || !error_.empty()) return;
@@ -54,6 +58,7 @@ void MutexService::onMessage(const Message& message) {
     cv_.notify_all();
 }
 
+// keep the original error and wake any application call waiting for progress.
 void MutexService::fail(const std::string& error) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (error_.empty()) error_ = error.empty() ? "Mutex service failed" : error;
@@ -69,6 +74,7 @@ void MutexService::checkHealth() {
     requireRunning();
 }
 
+// the inter-request deadline uses the grant time, not the later time the caller wakes.
 std::chrono::steady_clock::time_point MutexService::grantTime() {
     std::lock_guard<std::mutex> lock(mutex_);
     requireRunning();
@@ -76,6 +82,7 @@ std::chrono::steady_clock::time_point MutexService::grantTime() {
     return grantTime_;
 }
 
+// queue control messages behind earlier work so releases precede completion markers.
 void MutexService::broadcastControl(MessageType type, uint64_t completed) {
     if (!control_ || (type != MessageType::Ready && type != MessageType::Done && type != MessageType::Goodbye)) {
         throw std::runtime_error("Invalid run control message");
@@ -88,6 +95,7 @@ void MutexService::broadcastControl(MessageType type, uint64_t completed) {
 
 void MutexService::dispatch(const std::vector<OutgoingMessage>& outgoing) {
     for (const auto& action : outgoing) {
+        // self-voting uses the same queue and handlers without recursive protocol calls.
         if (action.peerId == nodeId_) onMessage(action.message);
         else send_(action.peerId, action.message);
     }
@@ -101,11 +109,13 @@ std::vector<OutgoingMessage> MutexService::receive(const Message& message) {
         return {};
     }
     if (message.sequence == 0) throw std::runtime_error("Request sequence must be positive");
+    // the next local request must exceed every request sequence processed so far.
     sequence_ = std::max(sequence_, message.sequence);
     switch (message.type) {
         case MessageType::Request:
         case MessageType::Relinquish:
         case MessageType::Release:
+            // check reverse membership: this requester must actually use us as a voter.
             if (std::find(sender.quorum.begin(), sender.quorum.end(), nodeId_) == sender.quorum.end()) {
                 throw std::runtime_error("Requester does not use this voter");
             }
@@ -131,6 +141,7 @@ void MutexService::process(const Event& event) {
         case EventType::message:
             dispatch(receive(event.message));
             break;
+        // final shutdown is allowed only after both local requests and local votes are idle.
         case EventType::broadcast: {
             if (!requester_.idle() || (event.message.type == MessageType::Goodbye && !voter_.idle())) {
                 throw std::runtime_error("Run control attempted before votes were released");
@@ -161,6 +172,7 @@ void MutexService::workerLoop() {
                 event = events_.front();
                 events_.pop_front();
             }
+            // process outside the queue lock so socket writes do not block event producers.
             process(event);
         }
     } catch (const std::exception& error) {

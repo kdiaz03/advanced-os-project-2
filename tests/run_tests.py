@@ -10,6 +10,7 @@ TESTS = ROOT / "build" / "run-tests"
 TESTS.mkdir(parents=True, exist_ok=True)
 
 
+# each case gets fresh ports and a generated config under build.
 def make_config(name, count, delay=1, cs=2, nodes=3):
     sockets = []
     try:
@@ -41,6 +42,7 @@ def cleanup(path):
     return subprocess.run(["./scripts/cleanup.sh", str(path)], capture_output=True, text=True, timeout=20)
 
 
+# verify both observer totals and every node's ordered entry/exit records.
 def run_case(name, count, delay=1, cs=2, nodes=3):
     path = make_config(name, count, delay, cs, nodes)
     proc = subprocess.Popen(["./scripts/launcher.sh", str(path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -71,6 +73,7 @@ def run_case(name, count, delay=1, cs=2, nodes=3):
             proc.communicate(timeout=5)
 
 
+# keep an unrelated process alive while exercising cancellation and pid validation.
 def interrupted_run():
     path = make_config("interrupted", 100000, 0, 10)
     sentinel = subprocess.Popen(["sleep", "60"])
@@ -92,6 +95,7 @@ def interrupted_run():
         record = run_dir / "node_0.pid"
         saved = record.read_text()
         start = subprocess.check_output(["ps", "-p", str(sentinel.pid), "-o", "lstart="], text=True).rstrip("\n")
+        # replace a process record temporarily; cleanup must refuse to signal the unrelated process.
         record.write_text(f"{sentinel.pid}\n{start}\n")
         refused = subprocess.run(["./scripts/node.sh", "cleanup", run_dir.name, "0"], capture_output=True, text=True, timeout=5)
         assert refused.returncode != 0 and "leaving it alone" in refused.stderr, refused.stderr
@@ -100,6 +104,7 @@ def interrupted_run():
         saved = None
         # cleanup uses the saved run config even if the original config changes.
         path.write_text("changed after launch\n")
+        # the saved run records must still work after the source config has changed.
         result = cleanup(path)
         assert result.returncode == 0, result.stderr
         out, err = proc.communicate(timeout=15)

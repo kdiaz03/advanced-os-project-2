@@ -7,6 +7,7 @@
 
 int main() {
     try {
+        // a fixed seed makes the distribution check repeatable.
         std::mt19937_64 random(12345);
         if (sampleDelay(0, random).count() != 0) throw std::runtime_error("Zero mean added a delay");
         double sum = 0;
@@ -18,10 +19,12 @@ int main() {
             squares += value * value;
         }
         const double mean = sum / 100000;
+        // an exponential delay has variance equal to the square of its mean.
         const double variance = squares / 100000 - mean * mean;
         if (std::abs(mean - 10) > 0.2 || std::abs(variance - 100) > 5) {
             throw std::runtime_error("Delay samples do not have the expected exponential mean and variance");
         }
+        // reject shutdown before completion and completion with the wrong request count.
         const Configuration config{{1, 0, 0, 3}, {{7, "localhost", 24000, {7}}}};
         RunControl control(config);
         bool rejected = false;

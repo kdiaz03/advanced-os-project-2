@@ -22,6 +22,8 @@ enum class MessageType : uint32_t {
     ExitAck = 14
 };
 
+// sequence identifies a mutex request, a checker request number, or a control count.
+// sender identifies the transmitting node; requester identifies the request being discussed.
 struct Message {
     MessageType type;
     uint32_t senderId;
@@ -29,6 +31,7 @@ struct Message {
     uint64_t sequence;
 };
 
+// smaller sequence numbers win; node ids break equal-sequence ties.
 struct RequestId {
     uint64_t sequence;
     uint32_t nodeId;
@@ -41,6 +44,7 @@ struct RequestId {
     }
 };
 
+// the destination is routing information and is not part of the wire frame.
 struct OutgoingMessage {
     uint32_t peerId;
     Message message;

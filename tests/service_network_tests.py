@@ -21,6 +21,7 @@ def run_case(ids, counts):
         path.write_text("\n".join(lines) + "\n")
         for sock in reserved:
             sock.close()
+        # wait for all completion lines without letting one slow node hide another node's failure.
         with selectors.DefaultSelector() as selector:
             for node, count in zip(ids, counts):
                 proc = subprocess.Popen(
@@ -40,6 +41,7 @@ def run_case(ids, counts):
                     line = key.fileobj.readline().strip()
                     assert line == f"COMPLETE {node} {count}", (node, line)
                     selector.unregister(key.fileobj)
+        # release the finished voters only after every application reports completion.
         for proc in processes:
             proc.stdin.write("stop\n")
             proc.stdin.flush()
@@ -56,5 +58,6 @@ def run_case(ids, counts):
 
 
 run_case([7], [30])
+# node zero finishes early but must continue voting for the other nodes.
 run_case([0, 1, 2], [1, 15, 15])
 print("PASS: localhost service, 30 self-voted entries and 31 distributed entries; early finisher keeps voting")

@@ -18,10 +18,12 @@ public:
     using SendCallback = std::function<void(uint32_t, const Message&)>;
     Observer(const Configuration& config, uint32_t nodeId, SendCallback send, std::ostream& log,
              std::chrono::milliseconds timeout = std::chrono::seconds(5));
+    // one application thread brackets its cs body with these acknowledged calls.
     void enter(uint64_t request);
     void leave(uint64_t request);
     void onMessage(const Message& message);
     void onNetworkError(uint32_t peerId, const std::string& error);
+    // the observer node checks final counts after every node has reported done.
     bool finish();
     uint32_t nodeId() const { return observerId_; }
 
@@ -36,6 +38,7 @@ private:
     std::mutex mutex_;
     std::condition_variable cv_;
 
+    // client acknowledgment state, shared with network receiver threads.
     std::optional<Message> pending_;
     bool acknowledged_ = false;
     bool inside_ = false;

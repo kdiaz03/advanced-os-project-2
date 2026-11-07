@@ -21,6 +21,7 @@ void silent(const std::vector<OutgoingMessage>& result) {
 
 int main() {
     try {
+        // reproduce voter 13's queue, including a new request that overtakes the inquiry trigger.
         Voter voter(13);
         expect(voter.handle(request(11)), MessageType::Locked, 11);
         silent(voter.handle(request(11)));
@@ -37,11 +38,13 @@ int main() {
         silent(voter.handle(request(11, 1, MessageType::Relinquish)));
         silent(voter.handle(request(11, 1, MessageType::Release)));
         silent(voter.handle(request(11)));
+        // an old release must not clear this newer vote for the same node.
         expect(voter.handle(request(11, 2)), MessageType::Locked, 11, 2);
         silent(voter.handle(request(11, 1, MessageType::Release)));
         expect(voter.handle(request(1, 3)), MessageType::Failed, 1, 3);
         expect(voter.handle(request(11, 2, MessageType::Release)), MessageType::Locked, 1, 3);
 
+        // a holder that finishes its cs releases normally instead of relinquishing.
         Voter releaseDuringInquiry(13);
         expect(releaseDuringInquiry.handle(request(11)), MessageType::Locked, 11);
         expect(releaseDuringInquiry.handle(request(7)), MessageType::Inquire, 11);

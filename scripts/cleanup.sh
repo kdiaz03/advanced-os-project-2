@@ -6,11 +6,14 @@ load_config_path "$1"
 [[ -r "$ACTIVE_DIR/run-id" ]] || { echo "No active run for this config."; exit 0; }
 [[ $(cat "$ACTIVE_DIR/config-path") == "$CONFIG_FILE" ]] || { echo "Config record mismatch." >&2; exit 1; }
 read -r RUN_ID < "$ACTIVE_DIR/run-id"
+# the optional run id keeps an old launcher's failure handler from cancelling a newer run.
 if (( $# == 2 )) && [[ $RUN_ID != "$2" ]]; then exit 0; fi
 [[ $RUN_ID =~ ^[A-Za-z0-9._-]+$ && $RUN_ID != .* ]] || exit 1
 run_dir="$PROJECT_DIR/logs/$RUN_ID"
+# block late starts before walking the saved node list.
 touch "$run_dir/cancelled"
 failed=0
+# use the launch snapshot rather than rereading a possibly changed config.
 while IFS=$'\t' read -r node_id host port; do
     if ! run_on_host "$host" "$PROJECT_DIR/scripts/node.sh" cleanup "$RUN_ID" "$node_id"; then failed=1; fi
 done < "$run_dir/nodes.tsv"

@@ -45,7 +45,9 @@ private:
     Configuration config_;
     uint32_t nodeId_;
     SendCallback send_;
+    // control callbacks run on the protocol worker after preceding frames are processed.
     ControlCallback control_;
+    // these protocol objects and the sequence clock are owned exclusively by the worker.
     Requester requester_;
     Voter voter_;
     uint64_t sequence_ = 0;
@@ -55,6 +57,7 @@ private:
     std::mutex mutex_;
     std::condition_variable cv_;
     std::deque<Event> events_;
+    // application-facing status is separate from the worker's requester state.
     CallState callState_ = CallState::idle;
     bool started_ = false;
     bool stopping_ = false;

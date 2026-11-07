@@ -16,6 +16,7 @@ void require(bool condition, const std::string& text) {
 }
 
 void serverCases() {
+    // cases: valid, overlap, missing exit, wrong exit id, skipped entry, duplicate entry.
     for (unsigned scenario = 0; scenario < 6; ++scenario) {
         std::ostringstream log;
         std::vector<Message> acknowledgments;
@@ -27,6 +28,7 @@ void serverCases() {
         if (scenario != 1) observer.leave(1);
         if (scenario == 4) observer.onMessage({MessageType::ObserveEnter, 9, 9, 2});
         observer.onMessage({MessageType::ObserveEnter, 9, 9, 1});
+        // even the overlapping case must receive an acknowledgment immediately.
         require(acknowledgments.back().type == MessageType::EnterAck, "Entry acknowledgment missing");
         if (scenario == 5) observer.onMessage({MessageType::ObserveEnter, 9, 9, 1});
         if (scenario == 3) observer.onMessage({MessageType::ObserveExit, 9, 9, 2});
@@ -40,10 +42,12 @@ void serverCases() {
                                    "Missing exit was not detected");
     }
     std::ostringstream log;
+    // a zero-request run is complete without any observed intervals.
     Observer empty(config(0), 4, [](uint32_t, const Message&) {}, log);
     require(empty.finish(), "Zero-request run should pass");
 }
 
+// a client must wait for acknowledgment and fail rather than proceed after losing it.
 void clientCases() {
     using namespace std::chrono_literals;
     std::ostringstream log;

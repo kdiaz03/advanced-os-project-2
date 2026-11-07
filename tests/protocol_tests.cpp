@@ -17,6 +17,7 @@ Message reply(MessageType type, uint32_t voter, uint64_t sequence = 5) {
     return {type, voter, 0, sequence};
 }
 
+// check vote accounting and deferred inquiries without relying on thread scheduling.
 void requesterCases() {
     Requester requester(0, {1, 2, 3});
     require(requester.enter(5).size() == 3, "Missing requests");
@@ -41,6 +42,7 @@ void requesterCases() {
     for (const auto& release : releases) {
         require(release.message.type == MessageType::Release && release.message.sequence == 5, "Wrong release identity");
     }
+    // replies from the previous identity must not contribute votes to this request.
     requester.enter(6);
     for (uint32_t voter : {1, 2, 3}) requester.handle(reply(MessageType::Locked, voter));
     require(!requester.inCs(), "Old votes granted a new request");
@@ -70,6 +72,7 @@ struct Node {
     Node(uint32_t id, const std::vector<uint32_t>& quorum) : requester(id, quorum), voter(id) {}
 };
 
+// deliver selected messages through the real requester and voter transitions.
 struct Simulation {
     std::map<uint32_t, Node> nodes;
     std::vector<OutgoingMessage> pending;
@@ -89,6 +92,7 @@ struct Simulation {
     void enter(uint32_t id) { auto& node = nodes.at(id); append(node.requester.enter(++node.sequence)); }
     void leave(uint32_t id) { auto& node = nodes.at(id); append(node.requester.leave()); ++node.completed; }
 
+    // reorder different channels, but never let a message overtake one on the same channel.
     bool eligible(size_t index) const {
         for (size_t i = 0; i < index; ++i) {
             if (pending[i].peerId == pending[index].peerId &&
@@ -109,6 +113,7 @@ struct Simulation {
             append(node.voter.handle(action.message));
         } else append(node.requester.handle(action.message));
         if (!wasInCs && node.requester.inCs()) entries.push_back(action.peerId);
+        // inspect every transition so even a brief overlapping grant fails the simulation.
         size_t active = 0;
         for (const auto& entry : nodes) if (entry.second.requester.inCs()) ++active;
         require(active <= 1, "Overlapping critical sections in simulation");
@@ -130,6 +135,7 @@ struct Simulation {
     }
 };
 
+// use the paper's 13-node quorums with requests from nodes 7, 8, and 11.
 void paperCycle(bool failureFirst) {
     Simulation sim({{1,2,3,4}, {2,5,8,11}, {3,6,8,13}, {4,6,10,11}, {1,5,6,7},
         {2,6,9,12}, {2,7,10,13}, {1,8,9,10}, {3,7,9,11}, {3,5,10,12},
@@ -142,6 +148,7 @@ void paperCycle(bool failureFirst) {
     sim.deliver(10, 8, MessageType::Failed);
     sim.deliver(11, 1, MessageType::Request);
     sim.deliver(7, 13, MessageType::Request);
+    // both arrival orders must lead to the same preemption and completion order.
     if (failureFirst) {
         sim.deliver(1, 11, MessageType::Failed);
         sim.deliver(13, 11, MessageType::Inquire);
@@ -161,6 +168,7 @@ void paperCycle(bool failureFirst) {
     require(sim.pending.empty() && sim.entries == std::vector<uint32_t>({7, 8, 11}), "Wrong paper-cycle completion order");
 }
 
+// fixed seeds make varied fifo delivery schedules reproducible when a test fails.
 void randomizedSchedules() {
     for (unsigned seed = 0; seed < 40; ++seed) {
         Simulation sim({{0,1}, {1,2}, {0,2}});

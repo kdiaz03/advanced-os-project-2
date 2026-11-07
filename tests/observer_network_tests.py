@@ -17,6 +17,7 @@ try:
         reserved.append(sock)
     ports = [sock.getsockname()[1] for sock in reserved]
     config = run_dir / "config.txt"
+    # put node nine first to verify observer selection follows record order, not the smallest id.
     config.write_text(f"2 0 0 1\n9 127.0.0.1 {ports[0]}\n4 127.0.0.1 {ports[1]}\n9 4\n9 4\n")
     for sock in reserved:
         sock.close()
@@ -26,6 +27,7 @@ try:
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         processes.append((node, proc))
+    # one overall deadline also catches a checker that incorrectly waits for the first interval to end.
     deadline = time.monotonic() + 12
     results = {}
     for node, proc in processes:
@@ -33,6 +35,7 @@ try:
         (run_dir / f"node_{node}.log").write_text(out + err)
         results[node] = (proc.returncode, out, err)
     observer_code, log, error = results[9]
+    # a generic crash is not enough: require the overlap result and complete entry/exit counts.
     assert observer_code == 1, results
     assert results[4][0] == 0, results
     assert not error, results
@@ -41,6 +44,7 @@ try:
     assert "CHECK PASS" not in log, log
     assert log.index("CHECK ENTER node=4") < log.index("CHECK EXIT node=9"), log
     print(f"PASS: deliberate TCP overlap reported failure with complete counts; evidence in {run_dir}")
+# retain the evidence logs and stop only this test's remaining children.
 finally:
     for sock in reserved:
         sock.close()

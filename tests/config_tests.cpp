@@ -17,6 +17,7 @@ Configuration parse(const std::string& text) {
     return parseConfigurationFile(fixture);
 }
 
+// require the expected diagnostic so an unrelated parsing failure cannot pass the test.
 void rejects(const std::string& text, const std::string& expected) {
     try { parse(text); }
     catch (const std::runtime_error& error) {
@@ -30,14 +31,17 @@ void rejects(const std::string& text, const std::string& expected) {
 
 int main() {
     try {
+        // the sample's second quorum starts with zero, which must remain a member id.
         const auto sample = parseConfigurationFile("configs/assignment-example.txt");
         require(sample.nodes.size() == 9 && sample.nodes[1].quorum.front() == 0, "Sample row mapping");
+        // combine noncontiguous ids, out-of-order records, comments, and fractional timing means.
         const auto config = parse("  # comment\r\n% heading\n2 2.5 0 0 # header\n"
             "9 localhost 24009\nignored\n4 localhost 24004\n4 9 # row for 9\n4\ntrailer\n");
         require(config.params.meanInterRequestMs == 2.5 && config.params.meanCsMs == 0, "Timing means");
         require(findNode(config, 9).quorum == std::vector<uint32_t>({4, 9}), "Record-order mapping");
         require(findNode(config, 4).quorum == std::vector<uint32_t>({4}), "Unequal quorums");
         parse("1 1 1 1\n0 localhost 24000\n0");
+        // check malformed fields, incomplete layouts, and invalid quorum relationships.
         rejects("", "expected one header");
         rejects("1 1 1\n", "four header");
         rejects("0 1 1 1\n", "Node count");

@@ -1,7 +1,9 @@
 import subprocess
 
+# validation mode exercises argument handling without starting network listeners.
 base = ["./build/main", "--check-config"]
 valid = ["-c", "configs/local-3nodes.txt", "-n", "0"]
+# cover valid input along with missing, repeated, trailing, and malformed arguments.
 cases = [
     (valid, True),
     ([], False),

@@ -5,6 +5,7 @@
 namespace {
 constexpr uint32_t magic = 0x50324d31; // p2m1: project and wire version
 
+// store the least significant bytes from right to left for big-endian encoding.
 void put(MessageFrame& frame, size_t offset, uint64_t value, size_t bytes) {
     for (size_t i = 0; i < bytes; ++i) {
         frame[offset + bytes - i - 1] = static_cast<uint8_t>(value & 0xff);
@@ -45,6 +46,7 @@ bool isObserverMessage(MessageType type) {
            type == MessageType::EnterAck || type == MessageType::ExitAck;
 }
 
+// use explicit offsets to avoid compiler padding or native byte-order differences.
 MessageFrame encodeMessage(const Message& message) {
     validateType(message.type);
     MessageFrame frame{};
@@ -56,6 +58,7 @@ MessageFrame encodeMessage(const Message& message) {
     return frame;
 }
 
+// check the wire version before interpreting the message fields.
 Message decodeMessage(const MessageFrame& frame) {
     if (get(frame, 0, 4) != magic) throw std::runtime_error("Invalid message version");
     Message message{static_cast<MessageType>(get(frame, 4, 4)),

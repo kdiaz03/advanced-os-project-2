@@ -8,6 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 
+// consume the entire token so values such as 12abc are rejected.
 uint32_t parseUnsigned(const std::string& text, const std::string& field) {
     uint32_t value = 0;
     const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
@@ -17,6 +18,7 @@ uint32_t parseUnsigned(const std::string& text, const std::string& field) {
     return value;
 }
 
+// look up the configured id rather than assuming ids are vector indices.
 const NodeIdentifier& findNode(const Configuration& config, uint32_t nodeId) {
     for (const auto& node : config.nodes) {
         if (node.nodeId == nodeId) return node;
@@ -25,6 +27,7 @@ const NodeIdentifier& findNode(const Configuration& config, uint32_t nodeId) {
 }
 
 namespace {
+// allow fractional milliseconds and zero, but reject negative or nonfinite means.
 double parseMean(const std::string& text) {
     size_t consumed = 0;
     double value = 0;
@@ -39,6 +42,7 @@ double parseMean(const std::string& text) {
     return value;
 }
 
+// every pair of requesters needs a common voter to enforce mutual exclusion.
 void validateQuorums(const Configuration& config) {
     for (const auto& node : config.nodes) {
         std::set<uint32_t> members;
@@ -75,6 +79,7 @@ Configuration parseConfigurationFile(const std::string& path) {
     size_t validLines = 0;
     while (std::getline(lines, line)) {
         ++lineNumber;
+        // remove inline comments before checking whether the line contains data.
         line.erase(line.find('#') == std::string::npos ? line.size() : line.find('#'));
         std::istringstream words(line);
         std::vector<std::string> tokens;
@@ -82,6 +87,7 @@ Configuration parseConfigurationFile(const std::string& path) {
         if (tokens.empty() || tokens.front().find_first_not_of("0123456789") != std::string::npos) continue;
 
         try {
+            // the first qualifying line contains the four application parameters.
             if (validLines == 0) {
                 if (tokens.size() != 4) throw std::runtime_error("Expected four header fields");
                 config.params = {parseUnsigned(tokens[0], "Node count"), parseMean(tokens[1]),
@@ -90,6 +96,7 @@ Configuration parseConfigurationFile(const std::string& path) {
                     throw std::runtime_error("Node count cannot fit in this config");
                 }
             } else if (validLines <= config.params.numNodes) {
+                // keep node records in file order so quorum rows can be matched later.
                 if (tokens.size() != 3) throw std::runtime_error("Expected node ID, hostname, port");
                 const uint32_t id = parseUnsigned(tokens[0], "Node ID");
                 const uint32_t port = parseUnsigned(tokens[2], "Port");
@@ -98,16 +105,19 @@ Configuration parseConfigurationFile(const std::string& path) {
                 if (!endpoints.emplace(tokens[1], port).second) throw std::runtime_error("Duplicate endpoint");
                 config.nodes.push_back({id, tokens[1], static_cast<uint16_t>(port), {}});
             } else if (validLines <= 2ULL * config.params.numNodes) {
+                // every token is a quorum member; the first token is not the row owner.
                 auto& quorum = config.nodes[validLines - config.params.numNodes - 1].quorum;
                 for (const auto& token : tokens) quorum.push_back(parseUnsigned(token, "Quorum member"));
             } else {
                 throw std::runtime_error("Unexpected additional config data");
             }
             ++validLines;
+        // report the physical line number, including skipped lines.
         } catch (const std::runtime_error& error) {
             throw std::runtime_error(path + ":" + std::to_string(lineNumber) + ": " + error.what());
         }
     }
+    // use the detailed handout layout: one header, n nodes, and n quorums.
     if (validLines == 0 || validLines != 1 + 2ULL * config.params.numNodes) {
         throw std::runtime_error(path + ": expected one header, n node records, and n quorum rows");
     }

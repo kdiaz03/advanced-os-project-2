@@ -8,6 +8,7 @@
 #include <mutex>
 #include <set>
 
+// track run-wide barriers after the protocol worker has processed each marker.
 class RunControl {
 public:
     explicit RunControl(const Configuration& config) : config_(config) {}
@@ -18,6 +19,7 @@ private:
     Configuration config_;
     std::mutex mutex_;
     std::condition_variable cv_;
+    // count distinct node ids rather than allowing duplicate markers to complete a barrier.
     std::map<MessageType, std::set<uint32_t>> received_;
 };
 

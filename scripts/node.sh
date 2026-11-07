@@ -13,6 +13,7 @@ pid_file="$run_dir/node_${node_id}.pid"
 gate="$run_dir/node_${node_id}.gate"
 expected="$binary -c $config_file -n $node_id -r $run_id"
 
+# run validation on the target host to catch missing files or an incompatible binary.
 if [[ $operation == check ]]; then
     [[ -x $binary && -r $config_file ]] || { echo "Missing shared binary or config on $(hostname)." >&2; exit 1; }
     "$binary" -c "$config_file" -n "$node_id" --check-config > /dev/null
@@ -30,14 +31,17 @@ done
 trap 'rmdir "$gate"' EXIT
 
 if [[ $operation == run ]]; then
+    # cleanup may have cancelled the run while this launcher waited for the gate.
     [[ ! -e "$run_dir/cancelled" ]] || exit 1
     "$binary" -c "$config_file" -n "$node_id" -r "$run_id" > "$run_dir/node_${node_id}.log" 2>&1 &
     node_pid=$!
+    # pair the pid with its start time to detect a later reuse of the same pid.
     started=$(ps -p "$node_pid" -o lstart= 2>/dev/null || true)
     printf '%s\n%s\n' "$node_pid" "$started" > "$pid_file"
     rmdir "$gate"
     trap - EXIT
     trap 'kill -TERM "$node_pid" 2>/dev/null || true' HUP INT TERM
+    # return the application exit code to the launcher instead of treating startup as success.
     if wait "$node_pid"; then exit 0; else exit "$?"; fi
 fi
 
@@ -46,6 +50,7 @@ fi
 [[ $node_pid =~ ^[0-9]+$ ]] || { echo "Invalid process record for node $node_id." >&2; exit 1; }
 actual=$(ps -ww -p "$node_pid" -o args= 2>/dev/null || true)
 [[ -n $actual ]] || exit 0
+# check both command and start time before signaling a recorded process.
 matches_process() {
     [[ -n $started && $(ps -ww -p "$node_pid" -o args= 2>/dev/null || true) == "$expected" && \
         $(ps -p "$node_pid" -o lstart= 2>/dev/null || true) == "$started" ]]
@@ -59,4 +64,5 @@ for ((attempt = 0; attempt < 20; attempt++)); do
     matches_process || exit 0
     sleep 0.1
 done
+# escalate only if the same process remains after the termination grace period.
 if matches_process; then kill -KILL "$node_pid" 2>/dev/null || true; fi

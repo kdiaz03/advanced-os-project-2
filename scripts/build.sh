@@ -8,7 +8,9 @@ fi
 load_config_path "$1"
 [[ -r $CONFIG_FILE ]] || { echo "Cannot read config: $1" >&2; exit 1; }
 mkdir -p "$PROJECT_DIR/build"
+# use the selected compiler while keeping generated files under build.
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Wpedantic -pthread \
     "$PROJECT_DIR"/src/*.cpp -o "$PROJECT_DIR/build/main"
+# validate the config with the program itself rather than a separate shell parser.
 "$PROJECT_DIR/build/main" -c "$CONFIG_FILE" --check-config
 echo "Built $PROJECT_DIR/build/main"

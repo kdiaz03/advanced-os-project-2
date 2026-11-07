@@ -9,6 +9,7 @@ ROOT = Path("build/network-tests")
 ROOT.mkdir(parents=True, exist_ok=True)
 
 
+# reserve an available local port instead of assuming a fixed test port is free.
 def listener():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(("127.0.0.1", 0))
@@ -44,6 +45,7 @@ def finish(proc, success=True, diagnostic=""):
     assert diagnostic in out + err, (diagnostic, out, err)
 
 
+# stop only child processes created by this test, including after an assertion fails.
 def dispose(proc):
     if proc is not None and proc.poll() is None:
         proc.kill()
@@ -81,6 +83,7 @@ def frame(sequence, kind=1, sender=1, magic=0x50324D31):
     return struct.pack("!IIIIQ", magic, kind, sender, sender, sequence)
 
 
+# act as a peer to inject malformed handshakes, broken frames, and stalled io.
 def fake_peer(case, diagnostic=""):
     proc = None
     with listener() as server, listener() as reserved:
@@ -126,6 +129,7 @@ def fake_peer(case, diagnostic=""):
                             conn.sendall(frame(0)[:1])
                         elif case == "disconnect":
                             conn.shutdown(socket.SHUT_RDWR)
+                # only the valid fragmented/coalesced exchange should exit successfully.
                 finish(proc, success=case == "fragmented-and-combined", diagnostic=diagnostic)
         finally:
             dispose(proc)

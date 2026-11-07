@@ -9,6 +9,7 @@ Observer::Observer(const Configuration& config, uint32_t nodeId, SendCallback se
       send_(std::move(send)), log_(log), timeout_(timeout) {
     findNode(config_, nodeId_);
     if (!send_ || timeout_.count() <= 0) throw std::runtime_error("Invalid observer setup");
+    // only the first configured node keeps the global entry and exit records.
     if (nodeId_ == observerId_) {
         for (const auto& node : config_.nodes) counts_.emplace(node.nodeId, Counts{});
     }
@@ -26,11 +27,14 @@ void Observer::exchange(MessageType type, uint64_t request) {
         if (!error_.empty()) throw std::runtime_error(error_);
         if (pending_ || request != completed_ + 1 || request > config_.params.requestsPerNode ||
                 inside_ != (type == MessageType::ObserveExit)) throw std::runtime_error("Invalid observer call order");
+        // arm the expected acknowledgment before sending, including a possible local reply.
         pending_ = message;
         acknowledged_ = false;
     }
+    // send outside the mutex; local delivery immediately calls the same receive handler.
     sendTo(observerId_, message);
     std::unique_lock<std::mutex> lock(mutex_);
+    // a missing acknowledgment is a failed check, not permission to continue unobserved.
     if (!cv_.wait_for(lock, timeout_, [&] { return acknowledged_ || !error_.empty(); })) {
         error_ = "Observer acknowledgment timed out";
     }
@@ -43,6 +47,7 @@ void Observer::exchange(MessageType type, uint64_t request) {
 void Observer::enter(uint64_t request) { exchange(MessageType::ObserveEnter, request); }
 void Observer::leave(uint64_t request) { exchange(MessageType::ObserveExit, request); }
 
+// latch the first violation so later matching exits cannot turn the run into a pass.
 void Observer::fail(const std::string& reason) {
     if (failure_.empty()) failure_ = reason;
     log_ << "CHECK FAIL " << reason << '\n';
@@ -52,6 +57,7 @@ void Observer::record(const Message& message) {
     auto& count = counts_.at(message.senderId);
     const std::string identity = "node=" + std::to_string(message.senderId) + " request=" + std::to_string(message.sequence);
     if (message.type == MessageType::ObserveEnter) {
+        // each node must report one entry and one matching exit in request-number order.
         if (message.sequence != count.entries + 1 || count.entries != count.exits ||
                 message.sequence > config_.params.requestsPerNode) {
             fail("invalid entry " + identity);
@@ -66,6 +72,7 @@ void Observer::record(const Message& message) {
         ++count.entries;
         log_ << "CHECK ENTER " << identity << " active=" << active_.size() << '\n';
     } else {
+        // a mismatched exit must not erase another active interval.
         const auto active = active_.find(message.senderId);
         if (active == active_.end() || active->second != message.sequence || message.sequence != count.exits + 1) {
             fail("unmatched exit " + identity);
@@ -81,6 +88,7 @@ void Observer::onMessage(const Message& message) {
     findNode(config_, message.senderId);
     if (message.type == MessageType::EnterAck || message.type == MessageType::ExitAck) {
         std::lock_guard<std::mutex> lock(mutex_);
+        // accept only the reply for this client's current event and request number.
         const auto expected = pending_ && pending_->type == MessageType::ObserveEnter ? MessageType::EnterAck : MessageType::ExitAck;
         if (message.senderId != observerId_ || message.requesterId != nodeId_ || !pending_ ||
                 message.sequence != pending_->sequence || message.type != expected || acknowledged_) {
@@ -96,6 +104,7 @@ void Observer::onMessage(const Message& message) {
     }
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        // serialize observations here rather than comparing clocks from different hosts.
         record(message);
     }
     // acknowledge even an overlap; the observer must never queue entry for permission.
@@ -114,6 +123,7 @@ bool Observer::finish() {
     if (nodeId_ != observerId_) throw std::runtime_error("Only the observer can finish the check");
     uint64_t entries = 0;
     uint64_t exits = 0;
+    // validate each node, since a correct total alone could hide a missing node.
     for (const auto& entry : counts_) {
         entries += entry.second.entries;
         exits += entry.second.exits;

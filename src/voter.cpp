@@ -7,6 +7,7 @@ OutgoingMessage Voter::reply(MessageType type, RequestId request) const {
 }
 
 std::vector<OutgoingMessage> Voter::onRequest(RequestId request) {
+    // do not resurrect a completed request or enqueue a duplicate request.
     if (request.sequence <= latestSequence_[request.nodeId]) return {};
     if (holder_ && holder_->nodeId == request.nodeId) {
         throw std::runtime_error("Requester already holds this vote");
@@ -15,6 +16,7 @@ std::vector<OutgoingMessage> Voter::onRequest(RequestId request) {
         if (pending.nodeId == request.nodeId) throw std::runtime_error("Requester already queued");
     }
     latestSequence_[request.nodeId] = request.sequence;
+    // a free voter may grant immediately, but can have only one holder.
     if (!holder_) {
         holder_ = request;
         return {reply(MessageType::Locked, request)};
@@ -25,11 +27,13 @@ std::vector<OutgoingMessage> Voter::onRequest(RequestId request) {
     if (*holder_ < request || *waiting_.begin() < request) {
         return {reply(MessageType::Failed, request)};
     }
+    // wait for the outstanding inquiry's release or relinquishment before sending another.
     if (inquiryPending_) return {};
     inquiryPending_ = true;
     return {reply(MessageType::Inquire, *holder_)};
 }
 
+// reset inquiry state because the next vote belongs to a different request.
 std::vector<OutgoingMessage> Voter::grantNext() {
     holder_.reset();
     inquiryPending_ = false;
@@ -52,6 +56,7 @@ std::vector<OutgoingMessage> Voter::handle(const Message& message) {
             // choose the best request now, not necessarily the one that triggered inquiry.
             waiting_.insert(*holder_);
             return grantNext();
+        // a late release must not remove the vote granted to a newer request.
         case MessageType::Release:
             if (!holder_ || !(*holder_ == request)) return {};
             return grantNext();

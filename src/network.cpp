@@ -34,6 +34,7 @@ struct Socket {
     int release() { const int result = fd; fd = -1; return result; }
 };
 
+// nonblocking sockets let polling enforce deadlines and cancellation.
 void prepareSocket(int fd) {
     if (fd < 0) throw socketError("socket");
     const int flags = fcntl(fd, F_GETFL, 0);
@@ -46,6 +47,7 @@ void prepareSocket(int fd) {
 #endif
 }
 
+// compare parsed configuration values, independent of comments and whitespace.
 std::string greeting(const Configuration& config, const std::string& runId) {
     if (runId.empty() || runId.size() > 128 || runId.find_first_not_of(
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.") != std::string::npos) {
@@ -72,6 +74,7 @@ Network::Network(const Configuration& config, uint32_t nodeId, const std::string
     : config_(config), nodeId_(nodeId), greeting_(greeting(config, runId)), ioTimeout_(ioTimeout) {
     findNode(config_, nodeId_);
     if (ioTimeout_.count() <= 0) throw std::runtime_error("I/O timeout must be positive");
+    // build a full mesh, regardless of which direction quorum membership points.
     for (const auto& node : config_.nodes) {
         if (node.nodeId != nodeId_) peers_.try_emplace(node.nodeId);
     }
@@ -85,6 +88,7 @@ void Network::waitFor(int fd, short events, Deadline deadline) {
             deadline - std::chrono::steady_clock::now()).count();
         if (remaining <= 0) throw std::runtime_error("Socket operation timed out");
         pollfd descriptor{fd, events, 0};
+        // short polling intervals let stop requests interrupt an otherwise long wait.
         const int result = poll(&descriptor, 1, static_cast<int>(std::min<int64_t>(remaining, 100)));
         if (result < 0) {
             if (errno == EINTR) continue;
@@ -98,6 +102,7 @@ void Network::waitFor(int fd, short events, Deadline deadline) {
     throw std::runtime_error("Network stopped");
 }
 
+// tcp may split one frame across several reads; keep the same deadline throughout.
 void Network::readExact(int fd, uint8_t* data, size_t size, Deadline deadline) {
     size_t offset = 0;
     while (offset < size) {
@@ -112,6 +117,7 @@ void Network::readExact(int fd, uint8_t* data, size_t size, Deadline deadline) {
     }
 }
 
+// advance past partial writes without repeating bytes already sent.
 void Network::writeExact(int fd, const uint8_t* data, size_t size, Deadline deadline) {
     size_t offset = 0;
     while (offset < size) {
@@ -131,6 +137,7 @@ void Network::writeExact(int fd, const uint8_t* data, size_t size, Deadline dead
     }
 }
 
+// send a bounded text greeting after its node id and byte count.
 void Network::writeGreeting(int fd, Deadline deadline) {
     const std::array<uint32_t, 2> header{htonl(nodeId_), htonl(static_cast<uint32_t>(greeting_.size()))};
     writeExact(fd, reinterpret_cast<const uint8_t*>(header.data()), sizeof(header), deadline);
@@ -140,6 +147,7 @@ void Network::writeGreeting(int fd, Deadline deadline) {
 uint32_t Network::readGreeting(int fd, Deadline deadline) {
     std::array<uint32_t, 2> header{};
     readExact(fd, reinterpret_cast<uint8_t*>(header.data()), sizeof(header), deadline);
+    // validate the peer-supplied length before allocating the greeting buffer.
     const uint32_t size = ntohl(header[1]);
     if (size == 0 || size > maxGreetingBytes) throw std::runtime_error("Invalid handshake size");
     std::string received(size, '\0');
@@ -148,6 +156,7 @@ uint32_t Network::readGreeting(int fd, Deadline deadline) {
     return ntohl(header[0]);
 }
 
+// listen on all local ipv4 interfaces at this node's configured port.
 void Network::openListener() {
     Socket listener(socket(AF_INET, SOCK_STREAM, 0));
     prepareSocket(listener.fd);
@@ -164,6 +173,7 @@ void Network::openListener() {
     listenFd_ = listener.release();
 }
 
+// only lower ids connect to us, giving each pair exactly one socket.
 void Network::acceptPeers(Deadline deadline) {
     size_t expected = 0;
     for (const auto& entry : peers_) if (entry.first < nodeId_) ++expected;
@@ -187,6 +197,7 @@ void Network::acceptPeers(Deadline deadline) {
     }
 }
 
+// dial higher ids while the accept thread handles incoming connections.
 void Network::connectPeers(Deadline deadline) {
     for (auto& entry : peers_) {
         const uint32_t peerId = entry.first;
@@ -206,6 +217,7 @@ void Network::connectPeers(Deadline deadline) {
                 Socket outgoing(socket(address->ai_family, address->ai_socktype, address->ai_protocol));
                 prepareSocket(outgoing.fd);
                 int connected = connect(outgoing.fd, address->ai_addr, address->ai_addrlen);
+                // a writable connecting socket may still contain an error; check the result.
                 if (connected < 0 && errno == EINPROGRESS) {
                     waitFor(outgoing.fd, POLLOUT, deadline);
                     int error = 0;
@@ -222,6 +234,7 @@ void Network::connectPeers(Deadline deadline) {
                 entry.second.fd = outgoing.release();
                 break;
             }
+            // a peer may start later, so retry until the shared startup deadline.
             if (entry.second.fd < 0) std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     }
@@ -235,12 +248,14 @@ void Network::establishConnections(std::chrono::milliseconds timeout) {
     std::thread acceptThread;
     std::exception_ptr firstError;
     std::mutex errorMutex;
+    // retain the first failure instead of replacing it with a cancellation error.
     const auto recordError = [&] {
         std::lock_guard<std::mutex> lock(errorMutex);
         if (!firstError) firstError = std::current_exception();
         setupCancelled_.store(true);
     };
     try {
+        // open the listener before dialing so simultaneous startup cannot miss it.
         openListener();
         acceptThread = std::thread([&] {
             try { acceptPeers(deadline); }
@@ -255,6 +270,7 @@ void Network::establishConnections(std::chrono::milliseconds timeout) {
         stop();
         std::rethrow_exception(firstError);
     }
+    // the mesh is complete; only the connected peer sockets are needed now.
     close(listenFd_);
     listenFd_ = -1;
     established_ = true;
@@ -280,6 +296,7 @@ void Network::receiveLoop(uint32_t peerId, ReceiveCallback onMessage, ErrorCallb
             MessageFrame frame{};
             readExact(fd, frame.data(), frame.size(), std::chrono::steady_clock::now() + ioTimeout_);
             const auto message = decodeMessage(frame);
+            // the frame sender must match the identity established by the handshake.
             if (message.senderId != peerId) throw std::runtime_error("Incoming sender ID mismatch");
             onMessage(message);
             // goodbye is the final frame on this peer's stream.
@@ -290,6 +307,7 @@ void Network::receiveLoop(uint32_t peerId, ReceiveCallback onMessage, ErrorCallb
     }
 }
 
+// one receiver per peer preserves that peer's frame order.
 void Network::startReceiving(ReceiveCallback onMessage, ErrorCallback onError) {
     if (!established_ || receiversStarted_ || stopping_.load() || !onMessage || !onError) {
         throw std::runtime_error("Cannot start receivers");
@@ -305,6 +323,7 @@ void Network::startReceiving(ReceiveCallback onMessage, ErrorCallback onError) {
     }
 }
 
+// wake socket operations, join receivers, then close descriptors they used.
 void Network::stop() {
     stopping_.store(true);
     for (auto& entry : peers_) if (entry.second.fd >= 0) shutdown(entry.second.fd, SHUT_RDWR);

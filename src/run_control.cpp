@@ -5,9 +5,11 @@
 void RunControl::onMessage(const Message& message) {
     findNode(config_, message.senderId);
     if (message.requesterId != message.senderId) throw std::runtime_error("Invalid run control sender");
+    // completion markers carry request counts; the other markers carry zero.
     const uint64_t expected = message.type == MessageType::Done ? config_.params.requestsPerNode : 0;
     if (message.sequence != expected) throw std::runtime_error("Wrong run completion count");
     std::lock_guard<std::mutex> lock(mutex_);
+    // each sender's markers must follow startup, completion, then final shutdown.
     if (message.type == MessageType::Done && !received_[MessageType::Ready].count(message.senderId)) {
         throw std::runtime_error("Completion before startup");
     }
@@ -25,6 +27,7 @@ void RunControl::waitFor(MessageType type, MutexService& service) {
     std::unique_lock<std::mutex> lock(mutex_);
     while (received_[type].size() != config_.nodes.size()) {
         cv_.wait_for(lock, std::chrono::milliseconds(100));
+        // release this mutex before checking service health to avoid reversing lock order.
         lock.unlock();
         service.checkHealth();
         lock.lock();

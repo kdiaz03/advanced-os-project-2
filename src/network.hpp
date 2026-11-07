@@ -24,10 +24,12 @@ public:
     Network(const Network&) = delete;
     Network& operator=(const Network&) = delete;
 
+    // complete both sides of every handshake before starting frame receivers.
     void establishConnections(std::chrono::milliseconds timeout = std::chrono::seconds(15));
     // callbacks run on receiver threads; the service will only enqueue events here.
     // error callbacks must not throw. callback targets must outlive stop().
     void startReceiving(ReceiveCallback onMessage, ErrorCallback onError);
+    // send one whole frame or throw; callers must not send concurrently with stop.
     void sendMessage(uint32_t peerId, const Message& message);
     // owner calls stop after producers stop. never call it from a callback.
     void stop();
@@ -43,6 +45,7 @@ private:
     uint32_t nodeId_;
     std::string greeting_;
     std::chrono::milliseconds ioTimeout_;
+    // peer entries are fixed at construction; sockets are filled during setup.
     std::map<uint32_t, Peer> peers_;
     int listenFd_ = -1;
     bool established_ = false;

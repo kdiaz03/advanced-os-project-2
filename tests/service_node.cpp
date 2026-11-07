@@ -12,6 +12,7 @@ int main(int argc, char* argv[]) {
         const auto config = parseConfigurationFile(argv[1]);
         const auto nodeId = parseUnsigned(argv[2], "Node ID");
         const auto count = parseUnsigned(argv[4], "Request count");
+        // the controller ends the test only after every application has completed its workload.
         std::atomic<bool> completed{false};
         Network network(config, nodeId, argv[3], std::chrono::seconds(1));
         MutexService service(config, nodeId, [&](uint32_t peer, const Message& message) { network.sendMessage(peer, message); });
@@ -22,6 +23,7 @@ int main(int argc, char* argv[]) {
                 [&](uint32_t peer, const std::string& error) {
                     if (!completed.load()) service.onNetworkError(peer, error);
                 });
+            // hold each grant briefly so other application threads have time to contend.
             for (uint32_t i = 0; i < count; ++i) {
                 service.cs_enter();
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));

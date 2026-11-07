@@ -31,6 +31,7 @@ int main(int argc, char* argv[]) {
         MutexService service(config, nodeId,
             [&](uint32_t target, const Message& message) { network.sendMessage(target, message); },
             [&](const Message& message) { control.onMessage(message); });
+        // coordinate the overlap with messages rather than sleep durations or clock comparisons.
         const auto waitFor = [&](bool& ready) {
             std::unique_lock<std::mutex> lock(mutex);
             if (!cv.wait_for(lock, std::chrono::seconds(3), [&] { return ready || !error.empty(); })) {
@@ -77,6 +78,7 @@ int main(int argc, char* argv[]) {
                 observer.enter(1);
                 observer.leave(1);
             }
+            // both observed intervals have exited before the final count check.
             service.broadcastControl(MessageType::Done, 1);
             control.waitFor(MessageType::Done, service);
             if (nodeId == first) passed = observer.finish();
@@ -89,6 +91,7 @@ int main(int argc, char* argv[]) {
             network.stop();
             throw;
         }
+        // return one for a detected violation; unexpected test errors use a different exit code.
         return passed ? 0 : 1;
     } catch (const std::exception& error) {
         std::cerr << "Test error: " << error.what() << '\n';

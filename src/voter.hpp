@@ -8,6 +8,7 @@
 #include <set>
 #include <vector>
 
+// vote-side state; transitions return messages for the worker to dispatch.
 class Voter {
 public:
     explicit Voter(uint32_t nodeId) : nodeId_(nodeId) {}
@@ -17,7 +18,9 @@ public:
 private:
     uint32_t nodeId_;
     std::optional<RequestId> holder_;
+    // the ordered set keeps the highest-priority waiting request first.
     std::set<RequestId> waiting_;
+    // remember completed requests too, so delayed duplicates remain stale.
     std::map<uint32_t, uint64_t> latestSequence_;
     bool inquiryPending_ = false;
 

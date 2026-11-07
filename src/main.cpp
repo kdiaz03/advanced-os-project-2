@@ -21,6 +21,7 @@ struct Options {
     bool list = false;
 };
 
+// validation and node-list modes let scripts reuse the same configuration parser.
 Options parseOptions(int argc, char* argv[]) {
     Options options;
     bool hasRunId = false;
@@ -45,6 +46,7 @@ void run(const Configuration& config, const Options& options, const std::filesys
     const uint32_t nodeId = *options.nodeId;
     RunControl control(config);
     Network network(config, nodeId, options.runId);
+    // keep observer records separate from application output produced by other threads.
     std::ofstream observerLog;
     if (nodeId == config.nodes.front().nodeId) {
         const auto directory = projectDir / "logs" / options.runId;
@@ -60,6 +62,7 @@ void run(const Configuration& config, const Options& options, const std::filesys
     try {
         network.establishConnections();
         service.start();
+        // route checker events separately; all mutex and run-control events use the worker.
         network.startReceiving([&](const Message& message) {
             if (isObserverMessage(message.type)) observer.onMessage(message);
             else service.onMessage(message);
@@ -67,12 +70,14 @@ void run(const Configuration& config, const Options& options, const std::filesys
             observer.onNetworkError(peer, error);
             service.onNetworkError(peer, error);
         });
+        // wait for every node to finish startup before generating application requests.
         service.broadcastControl(MessageType::Ready);
         control.waitFor(MessageType::Ready, service);
         runApplication(config, nodeId, service, observer);
         service.broadcastControl(MessageType::Done, config.params.requestsPerNode);
         // done shares each requester's fifo stream, so earlier releases are processed first.
         control.waitFor(MessageType::Done, service);
+        // a failed check prevents this node from sending a successful shutdown marker.
         if (nodeId == observer.nodeId()) {
             const bool passed = observer.finish();
             observerLog.flush();
@@ -85,6 +90,7 @@ void run(const Configuration& config, const Options& options, const std::filesys
         network.stop();
         std::cout << "[Node " << nodeId << "] Shutdown complete.\n";
     } catch (...) {
+        // join producers and receivers while their callback targets are still alive.
         service.stop();
         network.stop();
         throw;

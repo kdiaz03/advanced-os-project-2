@@ -21,6 +21,7 @@ Configuration twoNodes() {
     return {{2, 1, 1, 1}, {{0, "localhost", 24000, {0, 1}}, {1, "localhost", 24001, {0, 1}}}};
 }
 
+// a timeout must stop the worker before the future is destroyed or joined.
 void ready(MutexService& service, std::future<void>& call) {
     if (call.wait_for(2s) != std::future_status::ready) {
         service.stop();
@@ -37,6 +38,7 @@ void mustFail(std::future<void>& call, const std::string& text) {
     throw std::runtime_error("API failure was not reported");
 }
 
+// capture outgoing messages so tests can decide exactly when remote votes arrive.
 struct Capture {
     std::mutex mutex;
     std::condition_variable cv;
@@ -60,6 +62,7 @@ struct Capture {
     }
 };
 
+// withhold a remote vote while checking that this node still serves incoming requests.
 void blockingAndClock() {
     Capture capture;
     MutexService service(twoNodes(), 0, [&](uint32_t peer, const Message& message) { capture.send(peer, message); });
@@ -98,6 +101,7 @@ void blockingAndClock() {
     }
 }
 
+// blocked callers must wake on send failure, disconnect, shutdown, or invalid input.
 void abortCases() {
     for (int scenario = 0; scenario < 5; ++scenario) {
         Capture capture;
@@ -129,6 +133,7 @@ void abortCases() {
     mustFail(call, "sequence exhausted");
 }
 
+// a one-node quorum exercises self-voting without any socket sends.
 void singleNode() {
     Configuration config{{1, 0, 0, 100}, {{7, "localhost", 24000, {7}}}};
     MutexService service(config, 7, [](uint32_t, const Message&) { throw std::runtime_error("Self-message used socket"); });
@@ -140,6 +145,7 @@ void singleNode() {
     call.get();
 }
 
+// use real protocol workers with in-memory delivery to check overlapping application entries.
 void concurrentNodes(const Configuration& config) {
     std::map<uint32_t, std::unique_ptr<MutexService>> services;
     for (const auto& node : config.nodes) {

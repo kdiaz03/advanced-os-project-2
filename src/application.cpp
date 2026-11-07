@@ -8,6 +8,7 @@
 std::chrono::steady_clock::duration sampleDelay(double meanMs, std::mt19937_64& random) {
     using Clock = std::chrono::steady_clock;
     if (meanMs == 0) return Clock::duration::zero();
+    // scale a unit-mean exponential sample to the configured mean in milliseconds.
     const long double milliseconds = std::exponential_distribution<double>(1.0)(random) * static_cast<long double>(meanMs);
     const auto maximum = std::chrono::duration<long double, std::milli>(Clock::duration::max()).count() / 2;
     if (!std::isfinite(milliseconds) || milliseconds < 0 || milliseconds >= maximum) {
@@ -19,6 +20,7 @@ std::chrono::steady_clock::duration sampleDelay(double meanMs, std::mt19937_64& 
 void runApplication(const Configuration& config, uint32_t nodeId, MutexService& service, Observer& observer) {
     using Clock = std::chrono::steady_clock;
     std::random_device seed;
+    // mix the node id into independent seeds so nodes do not share a timing sequence.
     std::seed_seq seeds{seed(), seed(), nodeId};
     std::mt19937_64 random(seeds);
     for (uint64_t request = 1; request <= config.params.requestsPerNode; ++request) {
@@ -26,6 +28,7 @@ void runApplication(const Configuration& config, uint32_t nodeId, MutexService& 
         const auto grant = service.grantTime();
         const auto delay = sampleDelay(config.params.meanInterRequestMs, random);
         const auto duration = sampleDelay(config.params.meanCsMs, random);
+        // registration must be acknowledged before the instrumented cs body begins.
         observer.enter(request);
         std::cout << "CS_ENTER node=" << nodeId << " request=" << request << '\n';
         std::this_thread::sleep_for(duration);
@@ -36,6 +39,7 @@ void runApplication(const Configuration& config, uint32_t nodeId, MutexService& 
         if (request < config.params.requestsPerNode) {
             // the delay starts at the grant; an expired deadline adds no extra wait.
             const auto deadline = std::max(grant + delay, Clock::now());
+            // check for run failure periodically during a long inter-request delay.
             while (Clock::now() < deadline) {
                 service.checkHealth();
                 std::this_thread::sleep_until(std::min(deadline, Clock::now() + std::chrono::milliseconds(100)));

@@ -6,6 +6,7 @@
 #include <set>
 #include <vector>
 
+// request-side state; only the protocol worker calls these transitions.
 class Requester {
 public:
     Requester(uint32_t nodeId, const std::vector<uint32_t>& quorum);
@@ -21,8 +22,11 @@ private:
     std::set<uint32_t> quorum_;
     uint64_t sequence_ = 0;
     Phase phase_ = Phase::idle;
+    // votes currently owned by this request.
     std::set<uint32_t> held_;
+    // failed or returned votes that have not yet been granted again.
     std::set<uint32_t> unavailable_;
+    // voters asking for their held vote back.
     std::set<uint32_t> inquiries_;
 
     OutgoingMessage sendTo(uint32_t voter, MessageType type) const;

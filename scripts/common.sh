@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 PROJECT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 
+# use an absolute config path to identify its active run across invocations.
 load_config_path() {
     local input=$1
     if [[ ! -e $input && -e "$PROJECT_DIR/$input" ]]; then input="$PROJECT_DIR/$input"; fi
     CONFIG_FILE="$(cd "$(dirname "$input")" && pwd -P)/$(basename "$input")"
     local key
+    # the full path is also checked before cleanup, so a checksum collision cannot select another config.
     key=$(printf '%s' "$CONFIG_FILE" | cksum | awk '{print $1 "-" $2}')
     ACTIVE_DIR="$PROJECT_DIR/logs/active-$key"
 }
 
+# localhost runs need no ssh setup; cluster commands use the same node wrapper.
 run_on_host() {
     local host=$1
     shift
@@ -18,12 +21,14 @@ run_on_host() {
         bash "$@"
     else
         local command
+        # quote each argument before passing the command through the remote shell.
         printf -v command '%q ' bash "$@"
         ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 \
             "$host" "$command"
     fi
 }
 
+# an old launcher must not remove the active record belonging to a newer run.
 release_active() {
     local recorded
     [[ -r "$ACTIVE_DIR/run-id" ]] || return 0

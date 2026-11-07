@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 
+// copy receiver results into a queue for deterministic checks on the main thread.
 struct Event {
     Message message{};
     uint32_t peerId = 0;
@@ -39,6 +40,7 @@ int main(int argc, char* argv[]) {
             events.push_back({{}, peerId, error});
             cv.notify_one();
         });
+        // send numbered frames followed by a completion marker on every peer stream.
         for (const auto& node : config.nodes) {
             if (node.nodeId == nodeId) continue;
             for (uint64_t sequence = 0; sequence < count; ++sequence) {
@@ -47,6 +49,7 @@ int main(int argc, char* argv[]) {
             network.sendMessage(node.nodeId, {MessageType::Done, nodeId, nodeId, count});
         }
 
+        // track each peer separately so cross-peer interleaving is allowed.
         std::map<uint32_t, uint64_t> received;
         std::set<uint32_t> finished;
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
