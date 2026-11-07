@@ -24,7 +24,7 @@ std::runtime_error socketError(const std::string& operation) {
     return std::runtime_error(operation + ": " + std::strerror(errno));
 }
 
-// Own temporary descriptors until a completed handshake transfers them to a peer.
+// own temporary descriptors until a completed handshake transfers them to a peer.
 struct Socket {
     int fd;
     explicit Socket(int value) : fd(value) {}
@@ -92,7 +92,7 @@ void Network::waitFor(int fd, short events, Deadline deadline) {
         }
         if (result > 0) {
             if (descriptor.revents & POLLNVAL) throw std::runtime_error("Invalid socket descriptor");
-            return; // recv/send reports EOF or socket errors as well as readiness.
+            return; // recv/send reports eof or socket errors as well as readiness.
         }
     }
     throw std::runtime_error("Network stopped");
@@ -266,7 +266,7 @@ void Network::sendMessage(uint32_t peerId, const Message& message) {
     auto peer = peers_.find(peerId);
     if (peer == peers_.end()) throw std::runtime_error("No remote peer: " + std::to_string(peerId));
     const auto frame = encodeMessage(message);
-    // One entire frame per writer. The protocol worker will determine send order.
+    // one entire frame per writer. the protocol worker will determine send order.
     std::lock_guard<std::mutex> lock(peer->second.writeMutex);
     writeExact(peer->second.fd, frame.data(), frame.size(), std::chrono::steady_clock::now() + ioTimeout_);
 }
@@ -275,7 +275,7 @@ void Network::receiveLoop(uint32_t peerId, ReceiveCallback onMessage, ErrorCallb
     try {
         const int fd = peers_.at(peerId).fd;
         while (!stopping_.load()) {
-            // Idle peers have no receive deadline; a started frame must finish promptly.
+            // idle peers have no receive deadline; a started frame must finish promptly.
             waitFor(fd, POLLIN, Deadline::max());
             MessageFrame frame{};
             readExact(fd, frame.data(), frame.size(), std::chrono::steady_clock::now() + ioTimeout_);

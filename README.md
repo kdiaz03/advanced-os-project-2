@@ -21,6 +21,20 @@ application, launcher, cleanup, and checker are added in later commits.
 Tests additionally require Python 3. Generated binaries and test fixtures go in
 `build/`; run logs will go in `logs/`. Neither directory is committed.
 
+## Maekawa voter
+
+`Voter` holds at most one request and queues others by `(sequence, node ID)`.
+It sends `FAILED` if either the holder or an earlier queued request precedes a
+new request; otherwise it inquires of the holder, once per outstanding inquiry.
+Relinquishment requeues the holder and grants the current queue minimum. Release
+discards the holder. Both messages must match the holder's complete identity.
+Completed request sequences remain recorded so old requests cannot regain votes.
+
+The voter returns outgoing messages without sockets or threads. The next commit's
+single protocol worker will own it alongside requester state. Tests cover the
+paper's voter-13 scenario, including request 3 overtaking request 7 while an inquiry
+is pending, priority ties, stale messages, and release instead of relinquishment.
+
 ## Transport
 
 Every pair has one bidirectional TCP connection; the lower node ID connects.

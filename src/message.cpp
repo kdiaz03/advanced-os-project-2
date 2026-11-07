@@ -3,7 +3,7 @@
 #include <stdexcept>
 
 namespace {
-constexpr uint32_t magic = 0x50324d31; // P2M1: project and wire version
+constexpr uint32_t magic = 0x50324d31; // p2m1: project and wire version
 
 void put(MessageFrame& frame, size_t offset, uint64_t value, size_t bytes) {
     for (size_t i = 0; i < bytes; ++i) {
@@ -19,9 +19,18 @@ uint64_t get(const MessageFrame& frame, size_t offset, size_t bytes) {
 }
 
 void validateType(MessageType type) {
-    if (type != MessageType::Ping && type != MessageType::Done) {
-        throw std::runtime_error("Unknown message type");
+    switch (type) {
+        case MessageType::Ping:
+        case MessageType::Done:
+        case MessageType::Request:
+        case MessageType::Locked:
+        case MessageType::Failed:
+        case MessageType::Inquire:
+        case MessageType::Relinquish:
+        case MessageType::Release:
+            return;
     }
+    throw std::runtime_error("Unknown message type");
 }
 }
 

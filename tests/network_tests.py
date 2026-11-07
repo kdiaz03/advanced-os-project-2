@@ -22,7 +22,7 @@ def config(name, ports, ids=None):
     path = ROOT / (name + ".txt")
     lines = [f"{len(ports)} 20 10 5"]
     lines += [f"{node} 127.0.0.1 {port}" for node, port in zip(ids, ports)]
-    # Directed cyclic membership exercises the full mesh independently of quorums.
+    # directed cyclic membership exercises the full mesh independently of quorums.
     if len(ids) == 3:
         lines += [f"{ids[0]} {ids[1]}", f"{ids[1]} {ids[2]}", f"{ids[0]} {ids[2]}"]
     else:
@@ -58,7 +58,7 @@ def mesh(ids):
         sock.close()
     processes = []
     try:
-        # Start in reverse order to exercise listening before lower IDs connect.
+        # start in reverse order to exercise listening before lower ids connect.
         for node in reversed(ids):
             processes.append(start(path, node))
         for proc in processes:

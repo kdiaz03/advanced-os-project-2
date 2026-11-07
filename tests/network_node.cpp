@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
                 events.pop_front();
             }
             if (!event.error.empty()) {
-                // This diagnostic sends no more data after DONE on a peer's FIFO stream.
+                // this diagnostic sends no more data after done on a peer's fifo stream.
                 if (finished.count(event.peerId)) continue;
                 throw std::runtime_error(event.error);
             }

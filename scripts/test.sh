@@ -11,5 +11,8 @@ python3 tests/cli_tests.py
     tests/message_tests.cpp src/message.cpp -o build/message_tests
 ./build/message_tests
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Wpedantic -pthread -Isrc \
+    tests/voter_tests.cpp src/voter.cpp -o build/voter_tests
+./build/voter_tests
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Wpedantic -pthread -Isrc \
     tests/network_node.cpp src/config.cpp src/message.cpp src/network.cpp -o build/network_node
 python3 tests/network_tests.py

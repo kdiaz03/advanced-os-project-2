@@ -25,11 +25,11 @@ public:
     Network& operator=(const Network&) = delete;
 
     void establishConnections(std::chrono::milliseconds timeout = std::chrono::seconds(15));
-    // Callbacks run on receiver threads; the service will only enqueue events here.
-    // Error callbacks must not throw. Callback targets must outlive stop().
+    // callbacks run on receiver threads; the service will only enqueue events here.
+    // error callbacks must not throw. callback targets must outlive stop().
     void startReceiving(ReceiveCallback onMessage, ErrorCallback onError);
     void sendMessage(uint32_t peerId, const Message& message);
-    // Owner calls stop after producers stop. Never call it from a callback.
+    // owner calls stop after producers stop. never call it from a callback.
     void stop();
 
 private:

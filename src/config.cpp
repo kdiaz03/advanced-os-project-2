@@ -59,7 +59,7 @@ Configuration parseConfigurationFile(const std::string& path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) throw std::runtime_error("Cannot open config: " + path);
 
-    // Bound the input before parsing or allocating from its declared node count.
+    // bound the input before parsing or allocating from its declared node count.
     std::string contents(100001, '\0');
     input.read(contents.data(), static_cast<std::streamsize>(contents.size()));
     contents.resize(static_cast<size_t>(input.gcount()));

@@ -14,6 +14,14 @@ int main() {
                 decoded.senderId != original.senderId || decoded.type != original.type) {
             throw std::runtime_error("Decoded fields differ");
         }
+        for (const auto type : {MessageType::Request, MessageType::Locked, MessageType::Failed,
+                MessageType::Inquire, MessageType::Relinquish, MessageType::Release}) {
+            const Message message{type, 13, 7, 0x100000001ULL};
+            const auto result = decodeMessage(encodeMessage(message));
+            if (result.type != type || result.sequence != message.sequence || result.requesterId != 7) {
+                throw std::runtime_error("Protocol frame differs");
+            }
+        }
         for (size_t offset : {size_t(0), size_t(7)}) {
             auto invalid = expected;
             invalid[offset] = 0xff;
