@@ -15,7 +15,11 @@ enum class MessageType : uint32_t {
     Relinquish = 7,
     Release = 8,
     Ready = 9,
-    Goodbye = 10
+    Goodbye = 10,
+    ObserveEnter = 11,
+    ObserveExit = 12,
+    EnterAck = 13,
+    ExitAck = 14
 };
 
 struct Message {
@@ -47,5 +51,6 @@ constexpr size_t messageBytes = 24;
 using MessageFrame = std::array<uint8_t, messageBytes>;
 MessageFrame encodeMessage(const Message& message);
 Message decodeMessage(const MessageFrame& frame);
+bool isObserverMessage(MessageType type);
 
 #endif

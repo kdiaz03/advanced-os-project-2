@@ -1,8 +1,9 @@
-# Advanced Operating Systems Project 2 — Deliverable 1
+# Advanced Operating Systems Project 2 — Deliverables 1 and 2
 
 This C++17 program runs the preemptive Maekawa mutual exclusion service.
 Each node generates the configured number of critical-section requests and
-continues serving votes until all nodes finish. All nodes then stop automatically.
+continues serving votes until all nodes finish. A TCP observer checks for overlapping
+critical sections. All nodes then stop automatically.
 
 ## Build and run
 
@@ -34,15 +35,25 @@ The launcher prints the run's log directory: `logs/<run-id>/`. Each node writes
 `node_<id>.log`, including its entries, exits, completed request count, and
 `Shutdown complete.` message. Binaries are saved in `build/`.
 
+The first configured node hosts the observer using the existing TCP connections.
+It writes entries, exits, and the final result to `observer.log`. The launcher
+prints `CHECK PASS` with the expected entry/exit totals only after all nodes exit
+successfully. Overlap, unmatched events, or incomplete counts fail the run.
+
+Each node confirms entry before its CS body and confirms exit before releasing
+its votes. The observer acknowledges overlapping entries immediately and records
+failure; it never waits for another node to leave. It checks the instrumented CS
+body without comparing clocks across machines. Passing tests are evidence, not
+a proof of correctness for every possible execution.
+
 Run the local tests with Python 3 installed:
 
 ```bash
 ./scripts/test.sh
 ```
 
-These test the protocol, request counts, shutdown, and cleanup. The separate
-automated overlap checker will be added for Deliverable 2. Local tests have
-passed; compilation and a multi-host run on `csa-dcXX.utdallas.edu` still need
+These test the protocol, observer, request counts, shutdown, and cleanup.
+Compilation and a multi-host run on `csa-dcXX.utdallas.edu` still need
 verification before the required cluster demo.
 
 ## Stop an interrupted run

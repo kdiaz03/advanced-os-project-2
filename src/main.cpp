@@ -3,6 +3,8 @@
 #include "run_control.hpp"
 
 #include <iostream>
+#include <filesystem>
+#include <fstream>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -39,24 +41,44 @@ Options parseOptions(int argc, char* argv[]) {
     return options;
 }
 
-void run(const Configuration& config, const Options& options) {
+void run(const Configuration& config, const Options& options, const std::filesystem::path& projectDir) {
     const uint32_t nodeId = *options.nodeId;
     RunControl control(config);
     Network network(config, nodeId, options.runId);
+    std::ofstream observerLog;
+    if (nodeId == config.nodes.front().nodeId) {
+        const auto directory = projectDir / "logs" / options.runId;
+        std::filesystem::create_directories(directory);
+        observerLog.open(directory / "observer.log");
+        if (!observerLog) throw std::runtime_error("Cannot open observer log");
+    }
+    Observer observer(config, nodeId,
+        [&](uint32_t peer, const Message& message) { network.sendMessage(peer, message); }, observerLog);
     MutexService service(config, nodeId,
         [&](uint32_t peer, const Message& message) { network.sendMessage(peer, message); },
         [&](const Message& message) { control.onMessage(message); });
     try {
         network.establishConnections();
         service.start();
-        network.startReceiving([&](const Message& message) { service.onMessage(message); },
-            [&](uint32_t peer, const std::string& error) { service.onNetworkError(peer, error); });
+        network.startReceiving([&](const Message& message) {
+            if (isObserverMessage(message.type)) observer.onMessage(message);
+            else service.onMessage(message);
+        }, [&](uint32_t peer, const std::string& error) {
+            observer.onNetworkError(peer, error);
+            service.onNetworkError(peer, error);
+        });
         service.broadcastControl(MessageType::Ready);
         control.waitFor(MessageType::Ready, service);
-        runApplication(config, nodeId, service);
+        runApplication(config, nodeId, service, observer);
         service.broadcastControl(MessageType::Done, config.params.requestsPerNode);
         // done shares each requester's fifo stream, so earlier releases are processed first.
         control.waitFor(MessageType::Done, service);
+        if (nodeId == observer.nodeId()) {
+            const bool passed = observer.finish();
+            observerLog.flush();
+            if (!observerLog) throw std::runtime_error("Cannot write observer results");
+            if (!passed) throw std::runtime_error("Mutual exclusion check failed; see observer.log");
+        }
         service.broadcastControl(MessageType::Goodbye);
         control.waitFor(MessageType::Goodbye, service);
         service.stop();
@@ -79,7 +101,7 @@ int main(int argc, char* argv[]) {
         if (options.list) {
             for (const auto& node : config.nodes) std::cout << node.nodeId << '\t' << node.hostName << '\t' << node.port << '\n';
         } else if (options.check) std::cout << "Configuration valid.\n";
-        else run(config, options);
+        else run(config, options, std::filesystem::canonical(argv[0]).parent_path().parent_path());
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

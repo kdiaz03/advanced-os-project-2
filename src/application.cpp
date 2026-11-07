@@ -16,7 +16,7 @@ std::chrono::steady_clock::duration sampleDelay(double meanMs, std::mt19937_64& 
     return std::chrono::duration_cast<Clock::duration>(std::chrono::duration<long double, std::milli>(milliseconds));
 }
 
-void runApplication(const Configuration& config, uint32_t nodeId, MutexService& service) {
+void runApplication(const Configuration& config, uint32_t nodeId, MutexService& service, Observer& observer) {
     using Clock = std::chrono::steady_clock;
     std::random_device seed;
     std::seed_seq seeds{seed(), seed(), nodeId};
@@ -26,9 +26,12 @@ void runApplication(const Configuration& config, uint32_t nodeId, MutexService& 
         const auto grant = service.grantTime();
         const auto delay = sampleDelay(config.params.meanInterRequestMs, random);
         const auto duration = sampleDelay(config.params.meanCsMs, random);
+        observer.enter(request);
         std::cout << "CS_ENTER node=" << nodeId << " request=" << request << '\n';
         std::this_thread::sleep_for(duration);
         std::cout << "CS_EXIT node=" << nodeId << " request=" << request << '\n';
+        // remove the observation before releasing votes, so delayed exits cannot cause false overlaps.
+        observer.leave(request);
         service.cs_leave();
         if (request < config.params.requestsPerNode) {
             // the delay starts at the grant; an expired deadline adds no extra wait.

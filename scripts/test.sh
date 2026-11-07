@@ -21,8 +21,11 @@ service_sources=(src/config.cpp src/requester.cpp src/voter.cpp src/mutex_servic
     tests/service_tests.cpp "${service_sources[@]}" -o build/service_tests
 ./build/service_tests
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Wpedantic -pthread -Isrc \
-    tests/application_tests.cpp "${service_sources[@]}" src/application.cpp src/run_control.cpp -o build/application_tests
+    tests/application_tests.cpp "${service_sources[@]}" src/application.cpp src/run_control.cpp src/observer.cpp -o build/application_tests
 ./build/application_tests
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Wpedantic -pthread -Isrc \
+    tests/observer_tests.cpp src/config.cpp src/observer.cpp -o build/observer_tests
+./build/observer_tests
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Wpedantic -pthread -Isrc \
     tests/network_node.cpp src/config.cpp src/message.cpp src/network.cpp -o build/network_node
 python3 tests/network_tests.py

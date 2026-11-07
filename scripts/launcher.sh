@@ -61,4 +61,7 @@ while true; do
     if (( complete == 1 )); then break; fi
     sleep 0.1
 done
-echo "Run complete: all nodes exited successfully."
+summary=$(tail -n 1 "$run_dir/observer.log")
+[[ $summary == "CHECK PASS "* ]] || { echo "Overlap check did not pass; see $run_dir/observer.log" >&2; exit 1; }
+echo "$summary"
+echo "Run complete: all nodes exited successfully and the overlap check passed."

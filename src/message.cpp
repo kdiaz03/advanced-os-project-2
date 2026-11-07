@@ -30,10 +30,19 @@ void validateType(MessageType type) {
         case MessageType::Release:
         case MessageType::Ready:
         case MessageType::Goodbye:
+        case MessageType::ObserveEnter:
+        case MessageType::ObserveExit:
+        case MessageType::EnterAck:
+        case MessageType::ExitAck:
             return;
     }
     throw std::runtime_error("Unknown message type");
 }
+}
+
+bool isObserverMessage(MessageType type) {
+    return type == MessageType::ObserveEnter || type == MessageType::ObserveExit ||
+           type == MessageType::EnterAck || type == MessageType::ExitAck;
 }
 
 MessageFrame encodeMessage(const Message& message) {

@@ -15,7 +15,8 @@ int main() {
             throw std::runtime_error("Decoded fields differ");
         }
         for (const auto type : {MessageType::Request, MessageType::Locked, MessageType::Failed,
-                MessageType::Inquire, MessageType::Relinquish, MessageType::Release}) {
+                MessageType::Inquire, MessageType::Relinquish, MessageType::Release,
+                MessageType::ObserveEnter, MessageType::ObserveExit, MessageType::EnterAck, MessageType::ExitAck}) {
             const Message message{type, 13, 7, 0x100000001ULL};
             const auto result = decodeMessage(encodeMessage(message));
             if (result.type != type || result.sequence != message.sequence || result.requesterId != 7) {

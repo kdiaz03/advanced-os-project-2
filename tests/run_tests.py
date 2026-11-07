@@ -50,6 +50,9 @@ def run_case(name, count, delay=1, cs=2, nodes=3):
         match = re.search(r"^Logs: (.+)$", out, re.MULTILINE)
         assert match, out
         run_dir = Path(match.group(1))
+        summary = f"CHECK PASS entries={nodes * count} exits={nodes * count} expected={nodes * count}"
+        assert (run_dir / "observer.log").read_text().splitlines()[-1] == summary
+        assert summary in out
         for node in range(nodes):
             log = (run_dir / f"node_{node}.log").read_text()
             enters = re.findall(rf"^CS_ENTER node={node} request=(\d+)$", log, re.MULTILINE)
