@@ -1,0 +1,11 @@
+# n, mean inter-request delay (ms), mean CS duration (ms), requests per node
+3 20 10 5
+
+0 localhost 24100
+1 localhost 24101
+2 localhost 24102
+
+# Quorums correspond to node-record order. Every token is a member ID.
+0 1
+1 2
+0 2
