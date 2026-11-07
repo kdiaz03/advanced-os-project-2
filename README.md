@@ -15,10 +15,43 @@ config=configs/local-3nodes.txt
 ./scripts/test.sh
 ```
 
-Currently `main` validates configuration and node selection only. The mutex,
+Currently `main` validates configuration and node selection only. The transport
+is exercised by `build/network_node`, compiled by `scripts/test.sh`. The mutex,
 application, launcher, cleanup, and checker are added in later commits.
 Tests additionally require Python 3. Generated binaries and test fixtures go in
 `build/`; run logs will go in `logs/`. Neither directory is committed.
+
+## Transport
+
+Every pair has one bidirectional TCP connection; the lower node ID connects.
+Listeners open before connection attempts. Quorum membership does not restrict
+connections. A two-way handshake checks peer IDs, wire version, run ID, and the
+parsed configuration, including quorum-row order. Use one unique run ID across
+all nodes of a run. Configuration whitespace and comments do not affect it.
+
+The transport currently uses IPv4 to keep listener/address handling small;
+configured hosts must resolve to IPv4. The required cluster still needs testing.
+Connection setup, handshakes, writes, and started frames have deadlines. Idle
+connections can wait indefinitely. System hostname resolution is synchronous
+and is not interrupted by the socket deadline. There is no reconnect/replay.
+
+Frames are fixed at 24 bytes with explicit big-endian encoding. Each peer has a
+receiver thread and a write mutex. Receivers invoke callbacks in per-peer FIFO
+order. Future service callbacks will enqueue events for one protocol worker,
+which alone changes Maekawa state and orders its outgoing messages. Self-voting
+will use local events; sending to oneself through `Network` is an error.
+
+Read errors reach an error callback; send/setup errors throw. The service must
+fail the run and wake blocked callers on either path. Stop producers before
+calling `stop()` from the owning thread, and keep callback targets alive until
+it returns. Error callbacks must not throw. The transport does not decide global
+completion; the application's voting/drain lifecycle comes in a later commit.
+
+The tests exchange 128 ordered messages per peer in a three-process mesh and
+check a single-node setup, fragmented/combined frames, invalid messages and
+handshakes, missing peers, disconnects, and stalled reads/writes. They use only
+localhost, temporary ports, and their own child processes. They are transport
+tests, not mutual-exclusion tests.
 
 ## Configuration interpretations
 
