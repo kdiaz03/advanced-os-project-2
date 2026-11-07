@@ -52,7 +52,13 @@ Run the local tests with Python 3 installed:
 ./scripts/test.sh
 ```
 
-These test the protocol, observer, request counts, shutdown, and cleanup.
+These test the protocol, observer, request counts, shutdown, and cleanup. Normal
+and contention runs must finish within 30 seconds with exact completion counts.
+A separate two-process test deliberately overlaps intervals and must report
+`CHECK FAIL` within 12 seconds; the test script reports PASS when that expected
+failure is detected. Its evidence is saved in `logs/observer-negative-<id>/`.
+Only that test executable bypasses the mutex; the application always uses it.
+
 Compilation and a multi-host run on `csa-dcXX.utdallas.edu` still need
 verification before the required cluster demo.
 

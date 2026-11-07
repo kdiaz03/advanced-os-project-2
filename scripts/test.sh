@@ -33,3 +33,7 @@ python3 tests/network_tests.py
     tests/service_node.cpp "${service_sources[@]}" src/network.cpp src/message.cpp -o build/service_node
 python3 tests/service_network_tests.py
 python3 tests/run_tests.py
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Wpedantic -pthread -Isrc \
+    tests/observer_node.cpp "${service_sources[@]}" src/network.cpp src/message.cpp src/observer.cpp src/run_control.cpp \
+    -o build/observer_node
+python3 tests/observer_network_tests.py
