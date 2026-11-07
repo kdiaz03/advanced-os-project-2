@@ -1,27 +1,85 @@
-#include "config.hpp"
+#include "application.hpp"
+#include "network.hpp"
+#include "run_control.hpp"
 
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <string>
 
-int main(int argc, char* argv[]) {
+namespace {
+const char* usage = "Usage: ./build/main -c <config> -n <node_id> [-r <run_id>]\n"
+                    "       ./build/main -c <config> --check-config | --list-nodes";
+
+struct Options {
+    std::string configPath;
+    std::optional<uint32_t> nodeId;
+    std::string runId = "manual";
+    bool check = false;
+    bool list = false;
+};
+
+Options parseOptions(int argc, char* argv[]) {
+    Options options;
+    bool hasRunId = false;
+    for (int i = 1; i < argc; ++i) {
+        const std::string option = argv[i];
+        if (option == "-c" && i + 1 < argc && options.configPath.empty()) options.configPath = argv[++i];
+        else if (option == "-n" && i + 1 < argc && !options.nodeId) options.nodeId = parseUnsigned(argv[++i], "Node ID");
+        else if (option == "-r" && i + 1 < argc && !hasRunId) { options.runId = argv[++i]; hasRunId = true; }
+        else if (option == "--check-config" && !options.check) options.check = true;
+        else if (option == "--list-nodes" && !options.list) options.list = true;
+        else throw std::runtime_error(usage);
+    }
+    if (options.configPath.empty() || (options.check && options.list) ||
+            (!options.check && !options.list && !options.nodeId) ||
+            ((options.check || options.list) && hasRunId) || (options.list && options.nodeId)) {
+        throw std::runtime_error(usage);
+    }
+    return options;
+}
+
+void run(const Configuration& config, const Options& options) {
+    const uint32_t nodeId = *options.nodeId;
+    RunControl control(config);
+    Network network(config, nodeId, options.runId);
+    MutexService service(config, nodeId,
+        [&](uint32_t peer, const Message& message) { network.sendMessage(peer, message); },
+        [&](const Message& message) { control.onMessage(message); });
     try {
-        std::string configPath;
-        std::optional<uint32_t> nodeId;
-        for (int i = 1; i < argc; ++i) {
-            const std::string option = argv[i];
-            if (option == "-c" && i + 1 < argc && configPath.empty()) configPath = argv[++i];
-            else if (option == "-n" && i + 1 < argc && !nodeId) nodeId = parseUnsigned(argv[++i], "Node ID");
-            else throw std::runtime_error("Usage: ./build/main -c <config> -n <node_id>");
-        }
-        if (configPath.empty() || !nodeId) throw std::runtime_error("Usage: ./build/main -c <config> -n <node_id>");
-        const auto config = parseConfigurationFile(configPath);
-        const auto& node = findNode(config, *nodeId);
-        std::cout << "Config valid: node " << node.nodeId << " at " << node.hostName << ':' << node.port
-                  << ", " << config.params.numNodes << " nodes, quorum:";
-        for (uint32_t member : node.quorum) std::cout << ' ' << member;
-        std::cout << "\nMutex service is not implemented yet.\n";
+        network.establishConnections();
+        service.start();
+        network.startReceiving([&](const Message& message) { service.onMessage(message); },
+            [&](uint32_t peer, const std::string& error) { service.onNetworkError(peer, error); });
+        service.broadcastControl(MessageType::Ready);
+        control.waitFor(MessageType::Ready, service);
+        runApplication(config, nodeId, service);
+        service.broadcastControl(MessageType::Done, config.params.requestsPerNode);
+        // done shares each requester's fifo stream, so earlier releases are processed first.
+        control.waitFor(MessageType::Done, service);
+        service.broadcastControl(MessageType::Goodbye);
+        control.waitFor(MessageType::Goodbye, service);
+        service.stop();
+        network.stop();
+        std::cout << "[Node " << nodeId << "] Shutdown complete.\n";
+    } catch (...) {
+        service.stop();
+        network.stop();
+        throw;
+    }
+}
+}
+
+int main(int argc, char* argv[]) {
+    std::cout.setf(std::ios::unitbuf);
+    try {
+        const auto options = parseOptions(argc, argv);
+        const auto config = parseConfigurationFile(options.configPath);
+        if (options.nodeId) findNode(config, *options.nodeId);
+        if (options.list) {
+            for (const auto& node : config.nodes) std::cout << node.nodeId << '\t' << node.hostName << '\t' << node.port << '\n';
+        } else if (options.check) std::cout << "Configuration valid.\n";
+        else run(config, options);
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

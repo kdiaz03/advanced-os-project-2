@@ -13,7 +13,9 @@ enum class MessageType : uint32_t {
     Failed = 5,
     Inquire = 6,
     Relinquish = 7,
-    Release = 8
+    Release = 8,
+    Ready = 9,
+    Goodbye = 10
 };
 
 struct Message {

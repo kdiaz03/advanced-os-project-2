@@ -1,0 +1,9 @@
+# n, mean inter-request delay (ms), mean cs duration (ms), requests per node
+3 20 10 5
+0 csa-dc01.utdallas.edu 24100
+1 csa-dc02.utdallas.edu 24100
+2 csa-dc03.utdallas.edu 24100
+# supplied quorum rows in node-record order
+0 1
+1 2
+0 2

@@ -12,6 +12,7 @@ class Voter {
 public:
     explicit Voter(uint32_t nodeId) : nodeId_(nodeId) {}
     std::vector<OutgoingMessage> handle(const Message& message);
+    bool idle() const { return !holder_ && waiting_.empty(); }
 
 private:
     uint32_t nodeId_;

@@ -1,127 +1,71 @@
-# Advanced Operating Systems Project 2
+# Advanced Operating Systems Project 2 — Deliverable 1
 
-C++17 and POSIX TCP. The service uses one protocol worker per node,
-a full TCP mesh, and the supplied Maekawa quorums. Deliverable 2 adds a TCP
-observer. Performance experiments and the second algorithm are outside this stage.
+This C++17 program runs the preemptive Maekawa mutual exclusion service.
+Each node generates the configured number of critical-section requests and
+continues serving votes until all nodes finish. All nodes then stop automatically.
 
-## Build and check
+## Build and run
 
-From this directory, with a C++17 compiler (override with `CXX` if needed):
+From the project directory, choose a config and run:
 
 ```bash
 config=configs/local-3nodes.txt
 ./scripts/build.sh "$config"
+./scripts/launcher.sh "$config"
+```
+
+Use `configs/cluster-3nodes.txt` for the UTD machines, after checking the hostnames
+and available ports. Build on the cluster before launching there. The project
+must be accessible at the same path on every host, with passwordless SSH between
+hosts. The launcher checks access to the binary and saved config before starting.
+Use `CXX=g++ ./scripts/build.sh "$config"` to select a compiler if needed.
+
+The launcher waits for the run to finish and reports whether every node exited
+successfully. Run one instance per config at a time. For manual testing, start
+one process per configured node in separate terminals:
+
+```bash
 ./build/main -c "$config" -n 0
+```
+
+## Check results
+
+The launcher prints the run's log directory: `logs/<run-id>/`. Each node writes
+`node_<id>.log`, including its entries, exits, completed request count, and
+`Shutdown complete.` message. Binaries are saved in `build/`.
+
+Run the local tests with Python 3 installed:
+
+```bash
 ./scripts/test.sh
 ```
 
-Currently `main` validates configuration and node selection only. The transport
-and mutex service run in test executables compiled by `scripts/test.sh`. The
-application, launcher, cleanup, and checker are added in later commits.
-Tests additionally require Python 3. Generated binaries and test fixtures go in
-`build/`; run logs will go in `logs/`. Neither directory is committed.
+These test the protocol, request counts, shutdown, and cleanup. The separate
+automated overlap checker will be added for Deliverable 2. Local tests have
+passed; compilation and a multi-host run on `csa-dcXX.utdallas.edu` still need
+verification before the required cluster demo.
 
-## Maekawa voter
+## Stop an interrupted run
 
-`Voter` holds at most one request and queues others by `(sequence, node ID)`.
-It sends `FAILED` if either the holder or an earlier queued request precedes a
-new request; otherwise it inquires of the holder, once per outstanding inquiry.
-Relinquishment requeues the holder and grants the current queue minimum. Release
-discards the holder. Both messages must match the holder's complete identity.
-Completed request sequences remain recorded so old requests cannot regain votes.
+From another terminal on the launch host, run:
 
-The voter returns outgoing messages without sockets or threads. A single
-protocol worker owns it alongside requester state. Tests cover the
-paper's voter-13 scenario, including request 3 overtaking request 7 while an inquiry
-is pending, priority ties, stale messages, and release instead of relinquishment.
+```bash
+./scripts/cleanup.sh "$config"
+```
 
-## Requester and blocking API
+Cleanup uses saved process records and stops only matching processes from that
+run. It keeps the logs. Successful runs require no cleanup.
 
-`MutexService::cs_enter()` waits until its request holds every supplied quorum
-vote. `cs_leave()` waits until all releases have been dispatched (not necessarily
-received remotely). One application thread calls these in pairs. A condition
-variable releases the queue mutex while either call waits, so receivers and the
-worker continue serving other requesters. Invalid calls and run failures throw.
+## Config notes
 
-Only the worker changes the requester, voter, or sequence clock. New requests
-use a sequence above every request sequence it has processed. Self-messages go
-back through its event queue, preserving local order without recursive handlers.
-Replies contain the full request identity; replies to old requests cannot add
-votes to a new one. The requester enters its CS state before waking the caller.
+The parser reads four header fields, `n` node records, and `n` quorum rows.
+Quorum rows follow node-record order; every number in a row is a member ID.
+Whitespace, inline `#` comments, and other nonnumeric lines are supported.
 
-An inquiry is deferred until a failure makes relinquishment possible. Returning
-a vote removes it from the held set and marks it unavailable until regranted;
-this also permits further pending inquiries to be answered. A replacement grant
-clears that voter's unavailable status. Inside the CS, inquiries never return
-votes: only `cs_leave()` releases them.
+Delays are exponential, in milliseconds. The next delay starts at the current
+grant; if it expires during the critical section, the next request starts after
+leaving. Zero means no delay; the first request starts immediately.
 
-Transport callbacks enqueue messages or report failure. A send/receive failure
-wakes blocked API calls; `checkHealth()` reports failure when the application is
-not blocked. `stop()` aborts outstanding work and joins the worker. Stop the
-service and then the network while both objects remain alive, before destroying
-callback targets. Normal run-wide completion still needs the application layer.
-
-Tests force the paper's three-request cycle in both inquiry/failure orders and
-check 2,400 entries over 40 reproducible FIFO schedules. API tests cover self-voting,
-concurrent workers, stale grants, clock advancement, and failure wakeups. Local TCP
-tests keep an early finisher alive as a voter until every application completes.
-These checks do not replace the Deliverable 2 observer or cluster validation.
-
-## Transport
-
-Every pair has one bidirectional TCP connection; the lower node ID connects.
-Listeners open before connection attempts. Quorum membership does not restrict
-connections. A two-way handshake checks peer IDs, wire version, run ID, and the
-parsed configuration, including quorum-row order. Use one unique run ID across
-all nodes of a run. Configuration whitespace and comments do not affect it.
-
-The transport currently uses IPv4 to keep listener/address handling small;
-configured hosts must resolve to IPv4. The required cluster still needs testing.
-Connection setup, handshakes, writes, and started frames have deadlines. Idle
-connections can wait indefinitely. System hostname resolution is synchronous
-and is not interrupted by the socket deadline. There is no reconnect/replay.
-
-Frames are fixed at 24 bytes with explicit big-endian encoding. Each peer has a
-receiver thread and a write mutex. Receivers invoke callbacks in per-peer FIFO
-order. Service callbacks enqueue events for one protocol worker,
-which alone changes Maekawa state and orders its outgoing messages. Self-voting
-uses local events; sending to oneself through `Network` is an error.
-
-Read errors reach an error callback; send/setup errors throw. The service
-wakes blocked callers on a send/receive failure. Stop producers before
-calling `stop()` from the owning thread, and keep callback targets alive until
-it returns. Error callbacks must not throw. The transport does not decide global
-completion; the application's voting/drain lifecycle comes in a later commit.
-
-The tests exchange 128 ordered messages per peer in a three-process mesh and
-check a single-node setup, fragmented/combined frames, invalid messages and
-handshakes, missing peers, disconnects, and stalled reads/writes. They use only
-localhost, temporary ports, and their own child processes. They are transport
-tests; the separate service and protocol tests exercise mutual exclusion.
-
-## Configuration interpretations
-
-- Read four header fields, then `n` node records and `n` quorum rows: `1+2n`
-  valid lines. Confirm the handout's contradictory `n+1` statement with the TA.
-- Quorum rows correspond to node-record order. All row tokens are member IDs;
-  the first token is not an owner. IDs need not be contiguous. Confirm row
-  mapping with the TA, particularly when node records are out of ID order.
-- Ignore lines whose first whitespace-separated token is not an unsigned
-  decimal integer, and strip inline `#` comments. Inputs are at most 100,000 bytes.
-- Timing means are finite nonnegative milliseconds (fractions accepted).
-  Zero will mean no delay. Request counts may be zero.
-- Reject unknown/duplicate quorum members and disjoint quorums. Do not require
-  equal sizes, symmetric membership, or add self-membership automatically.
-- Resolve hostnames exactly as supplied. The assignment's `dcXX` aliases need
-  confirmation on the cluster; do not silently rewrite them.
-
-Planned timing: sample the next delay at the current grant and issue the next
-request at the later of that deadline or completion of `cs_leave()`. The first
-request starts immediately after startup. Confirm the case where the delay
-expires during the CS with the TA.
-
-## Validation status
-
-Local checks do not validate the required `csa-dcXX.utdallas.edu` demo. Verify
-cluster DNS, SSH, compiler/runtime, paths, and cross-host TCP before claiming
-cluster support. No Project 1 runtime paths or hostname aliases are assumed.
+Confirm the handout's `n+1` versus `1+2n` line count, quorum-row ordering, and
+this delay interpretation with the TA. The sample's `dcXX` aliases also need
+confirmation on the cluster. Hostnames are used unchanged and must resolve to IPv4.

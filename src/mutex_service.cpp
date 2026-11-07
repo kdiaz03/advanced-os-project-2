@@ -5,8 +5,8 @@
 #include <stdexcept>
 #include <utility>
 
-MutexService::MutexService(const Configuration& config, uint32_t nodeId, SendCallback send)
-    : config_(config), nodeId_(nodeId), send_(std::move(send)),
+MutexService::MutexService(const Configuration& config, uint32_t nodeId, SendCallback send, ControlCallback control)
+    : config_(config), nodeId_(nodeId), send_(std::move(send)), control_(std::move(control)),
       requester_(nodeId, findNode(config, nodeId).quorum), voter_(nodeId) {
     if (!send_) throw std::runtime_error("Missing send callback");
 }
@@ -69,6 +69,23 @@ void MutexService::checkHealth() {
     requireRunning();
 }
 
+std::chrono::steady_clock::time_point MutexService::grantTime() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    requireRunning();
+    if (callState_ != CallState::granted) throw std::runtime_error("No current grant time");
+    return grantTime_;
+}
+
+void MutexService::broadcastControl(MessageType type, uint64_t completed) {
+    if (!control_ || (type != MessageType::Ready && type != MessageType::Done && type != MessageType::Goodbye)) {
+        throw std::runtime_error("Invalid run control message");
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    requireRunning();
+    events_.push_back({EventType::broadcast, {type, nodeId_, nodeId_, completed}});
+    cv_.notify_all();
+}
+
 void MutexService::dispatch(const std::vector<OutgoingMessage>& outgoing) {
     for (const auto& action : outgoing) {
         if (action.peerId == nodeId_) onMessage(action.message);
@@ -78,6 +95,11 @@ void MutexService::dispatch(const std::vector<OutgoingMessage>& outgoing) {
 
 std::vector<OutgoingMessage> MutexService::receive(const Message& message) {
     const auto& sender = findNode(config_, message.senderId);
+    if (message.type == MessageType::Ready || message.type == MessageType::Done || message.type == MessageType::Goodbye) {
+        if (!control_) throw std::runtime_error("Missing run control handler");
+        control_(message);
+        return {};
+    }
     if (message.sequence == 0) throw std::runtime_error("Request sequence must be positive");
     sequence_ = std::max(sequence_, message.sequence);
     switch (message.type) {
@@ -109,10 +131,22 @@ void MutexService::process(const Event& event) {
         case EventType::message:
             dispatch(receive(event.message));
             break;
+        case EventType::broadcast: {
+            if (!requester_.idle() || (event.message.type == MessageType::Goodbye && !voter_.idle())) {
+                throw std::runtime_error("Run control attempted before votes were released");
+            }
+            std::vector<OutgoingMessage> outgoing;
+            for (const auto& node : config_.nodes) outgoing.push_back({node.nodeId, event.message});
+            dispatch(outgoing);
+            break;
+        }
     }
     std::lock_guard<std::mutex> lock(mutex_);
     if (event.type == EventType::leave) callState_ = CallState::idle;
-    else if (requester_.inCs() && callState_ == CallState::waiting) callState_ = CallState::granted;
+    else if (requester_.inCs() && callState_ == CallState::waiting) {
+        grantTime_ = std::chrono::steady_clock::now();
+        callState_ = CallState::granted;
+    }
     cv_.notify_all();
 }
 

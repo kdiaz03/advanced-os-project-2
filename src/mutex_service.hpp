@@ -6,6 +6,7 @@
 #include "voter.hpp"
 
 #include <condition_variable>
+#include <chrono>
 #include <deque>
 #include <functional>
 #include <mutex>
@@ -15,7 +16,8 @@
 class MutexService {
 public:
     using SendCallback = std::function<void(uint32_t, const Message&)>;
-    MutexService(const Configuration& config, uint32_t nodeId, SendCallback send);
+    using ControlCallback = std::function<void(const Message&)>;
+    MutexService(const Configuration& config, uint32_t nodeId, SendCallback send, ControlCallback control = {});
     ~MutexService();
     MutexService(const MutexService&) = delete;
     MutexService& operator=(const MutexService&) = delete;
@@ -27,11 +29,13 @@ public:
     void onMessage(const Message& message);
     void onNetworkError(uint32_t peerId, const std::string& error);
     void checkHealth();
+    std::chrono::steady_clock::time_point grantTime();
+    void broadcastControl(MessageType type, uint64_t completed = 0);
     // stop aborts pending calls; normal distributed completion belongs to the application.
     void stop();
 
 private:
-    enum class EventType { enter, leave, message };
+    enum class EventType { enter, leave, message, broadcast };
     struct Event {
         EventType type;
         Message message{};
@@ -41,6 +45,7 @@ private:
     Configuration config_;
     uint32_t nodeId_;
     SendCallback send_;
+    ControlCallback control_;
     Requester requester_;
     Voter voter_;
     uint64_t sequence_ = 0;
@@ -54,6 +59,7 @@ private:
     bool started_ = false;
     bool stopping_ = false;
     std::string error_;
+    std::chrono::steady_clock::time_point grantTime_{};
 
     void requireRunning() const;
     void fail(const std::string& error);

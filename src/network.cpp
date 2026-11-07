@@ -282,6 +282,8 @@ void Network::receiveLoop(uint32_t peerId, ReceiveCallback onMessage, ErrorCallb
             const auto message = decodeMessage(frame);
             if (message.senderId != peerId) throw std::runtime_error("Incoming sender ID mismatch");
             onMessage(message);
+            // goodbye is the final frame on this peer's stream.
+            if (message.type == MessageType::Goodbye) return;
         }
     } catch (const std::exception& error) {
         if (!stopping_.load()) onError(peerId, error.what());

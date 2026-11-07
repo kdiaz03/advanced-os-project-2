@@ -1,6 +1,6 @@
 import subprocess
 
-base = ["./build/main"]
+base = ["./build/main", "--check-config"]
 valid = ["-c", "configs/local-3nodes.txt", "-n", "0"]
 cases = [
     (valid, True),

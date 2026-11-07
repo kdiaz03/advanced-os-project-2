@@ -13,6 +13,7 @@ public:
     std::vector<OutgoingMessage> leave();
     std::vector<OutgoingMessage> handle(const Message& message);
     bool inCs() const { return phase_ == Phase::inCs; }
+    bool idle() const { return phase_ == Phase::idle; }
 
 private:
     enum class Phase { idle, requesting, inCs };

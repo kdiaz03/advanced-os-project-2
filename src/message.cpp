@@ -28,6 +28,8 @@ void validateType(MessageType type) {
         case MessageType::Inquire:
         case MessageType::Relinquish:
         case MessageType::Release:
+        case MessageType::Ready:
+        case MessageType::Goodbye:
             return;
     }
     throw std::runtime_error("Unknown message type");
