@@ -22,6 +22,8 @@ On a `csa-dcXX.utdallas.edu` machine, from the project directory:
 - `build.sh` compiles with `/usr/bin/g++` when it exists. On the dc machines the
   default `c++` is a newer GCC whose binaries need a newer C++ runtime than the
   one installed, so do not build with it. Set `CXX` to pick another compiler.
+- Hostnames are used exactly as written and must resolve. On the cluster only
+  full names such as `csa-dc02.utdallas.edu` do; short names like `dc02` do not.
 - To run one node by hand: `./build/main -c <config> -n <node_id>`.
 - `configs/local-3nodes.txt` runs all three nodes on `localhost`.
 

@@ -1,14 +1,14 @@
 9 20 10 1000
 % node information
-0 dc02 1234
-1 dc03 1233
-2 dc06 5233
-3 dc05 1232
-4 dc10 1233
-5 dc09 3455
-6 dc15 6789
-7 dc18 3467
-8 dc23 2546
+0 csa-dc02.utdallas.edu 1234
+1 csa-dc03.utdallas.edu 1233
+2 csa-dc06.utdallas.edu 5233
+3 csa-dc05.utdallas.edu 1232
+4 csa-dc10.utdallas.edu 1233
+5 csa-dc09.utdallas.edu 3455
+6 csa-dc15.utdallas.edu 6789
+7 csa-dc18.utdallas.edu 3467
+8 csa-dc23.utdallas.edu 2546
 % quorum definitions
 0 1 2 3 6
 0 1 2 4 7
