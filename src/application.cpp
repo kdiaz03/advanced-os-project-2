@@ -17,13 +17,17 @@ std::chrono::steady_clock::duration sampleDelay(double meanMs, std::mt19937_64& 
     return std::chrono::duration_cast<Clock::duration>(std::chrono::duration<long double, std::milli>(milliseconds));
 }
 
-void runApplication(const Configuration& config, uint32_t nodeId, MutexService& service, Observer& observer) {
+ApplicationStats runApplication(const Configuration& config, uint32_t nodeId, MutexService& service, Observer& observer) {
     using Clock = std::chrono::steady_clock;
     std::random_device seed;
     // mix the node id into independent seeds so nodes do not share a timing sequence.
     std::seed_seq seeds{seed(), seed(), nodeId};
     std::mt19937_64 random(seeds);
+    using Ms = std::chrono::duration<double, std::milli>;
+    ApplicationStats stats;
+    const auto start = Clock::now();
     for (uint64_t request = 1; request <= config.params.requestsPerNode; ++request) {
+        const auto requested = Clock::now();
         service.cs_enter();
         const auto grant = service.grantTime();
         const auto delay = sampleDelay(config.params.meanInterRequestMs, random);
@@ -32,6 +36,11 @@ void runApplication(const Configuration& config, uint32_t nodeId, MutexService& 
         observer.enter(request);
         std::cout << "CS_ENTER node=" << nodeId << " request=" << request << '\n';
         std::this_thread::sleep_for(duration);
+        // response time ends when the cs body is over, before the observer exit exchange.
+        const double response = Ms(Clock::now() - requested).count();
+        stats.responseTotalMs += response;
+        stats.responseMaxMs = std::max(stats.responseMaxMs, response);
+        ++stats.requests;
         std::cout << "CS_EXIT node=" << nodeId << " request=" << request << '\n';
         // remove the observation before releasing votes, so delayed exits cannot cause false overlaps.
         observer.leave(request);
@@ -46,5 +55,7 @@ void runApplication(const Configuration& config, uint32_t nodeId, MutexService& 
             }
         }
     }
+    stats.durationMs = Ms(Clock::now() - start).count();
     std::cout << "Completed " << config.params.requestsPerNode << " requests on node " << nodeId << ".\n";
+    return stats;
 }

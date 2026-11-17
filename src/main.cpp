@@ -73,10 +73,17 @@ void run(const Configuration& config, const Options& options, const std::filesys
         // wait for every node to finish startup before generating application requests.
         service.broadcastControl(MessageType::Ready);
         control.waitFor(MessageType::Ready, service);
-        runApplication(config, nodeId, service, observer);
+        const auto stats = runApplication(config, nodeId, service, observer);
         service.broadcastControl(MessageType::Done, config.params.requestsPerNode);
         // done shares each requester's fifo stream, so earlier releases are processed first.
         control.waitFor(MessageType::Done, service);
+        // after done, this node has sent every vote it will send for the run.
+        std::cout << "METRICS node=" << nodeId << " requests=" << stats.requests
+                  << " network_messages=" << service.networkMessagesSent()
+                  << " self_messages=" << service.selfMessagesSent()
+                  << " response_total_ms=" << stats.responseTotalMs
+                  << " response_max_ms=" << stats.responseMaxMs
+                  << " duration_ms=" << stats.durationMs << '\n';
         // a failed check prevents this node from sending a successful shutdown marker.
         if (nodeId == observer.nodeId()) {
             const bool passed = observer.finish();

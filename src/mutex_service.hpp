@@ -5,6 +5,7 @@
 #include "requester.hpp"
 #include "voter.hpp"
 
+#include <atomic>
 #include <condition_variable>
 #include <chrono>
 #include <deque>
@@ -31,6 +32,9 @@ public:
     void checkHealth();
     std::chrono::steady_clock::time_point grantTime();
     void broadcastControl(MessageType type, uint64_t completed = 0);
+    // mutex protocol messages sent by this node; observer and run-control traffic are excluded.
+    uint64_t networkMessagesSent() const { return networkMessages_; }
+    uint64_t selfMessagesSent() const { return selfMessages_; }
     // stop aborts pending calls; normal distributed completion belongs to the application.
     void stop();
 
@@ -63,6 +67,9 @@ private:
     bool stopping_ = false;
     std::string error_;
     std::chrono::steady_clock::time_point grantTime_{};
+    // written by the worker and read by the main thread after the run completes.
+    std::atomic<uint64_t> networkMessages_{0};
+    std::atomic<uint64_t> selfMessages_{0};
 
     void requireRunning() const;
     void fail(const std::string& error);

@@ -95,9 +95,18 @@ void MutexService::broadcastControl(MessageType type, uint64_t completed) {
 
 void MutexService::dispatch(const std::vector<OutgoingMessage>& outgoing) {
     for (const auto& action : outgoing) {
+        // only request through release are mutex protocol messages; control markers are not counted.
+        const auto type = static_cast<uint32_t>(action.message.type);
+        const bool protocol = type >= static_cast<uint32_t>(MessageType::Request) &&
+                              type <= static_cast<uint32_t>(MessageType::Release);
         // self-voting uses the same queue and handlers without recursive protocol calls.
-        if (action.peerId == nodeId_) onMessage(action.message);
-        else send_(action.peerId, action.message);
+        if (action.peerId == nodeId_) {
+            if (protocol) ++selfMessages_;
+            onMessage(action.message);
+        } else {
+            if (protocol) ++networkMessages_;
+            send_(action.peerId, action.message);
+        }
     }
 }
 
