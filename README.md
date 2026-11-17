@@ -6,16 +6,24 @@ experiment results are in the separate PDF report.
 
 ## Build and run
 
+On a `csa-dcXX.utdallas.edu` machine, from the project directory:
+
 ```bash
-config=configs/cluster-3nodes.txt      # or configs/local-3nodes.txt
-./scripts/build.sh "$config"
-./scripts/launcher.sh "$config"
+./scripts/build.sh configs/cluster-3nodes.txt
+./scripts/launcher.sh configs/cluster-3nodes.txt
 ```
 
-Build on the cluster before launching there. Every host needs the project at the
-same path and passwordless SSH from the launch host. Use `CXX=g++` before
-`build.sh` to pick a compiler. To run one node by hand:
-`./build/main -c "$config" -n <node_id>`.
+`configs/cluster-3nodes.txt` runs nodes on csa-dc01, csa-dc02 and csa-dc03, port
+24100. Edit the hostnames and ports to use other machines or another config.
+
+- The project must be at the same path on every host (the home directory is
+  shared across the dc machines), with passwordless SSH from the launch host
+  to each configured host.
+- `build.sh` compiles with `/usr/bin/g++` when it exists. On the dc machines the
+  default `c++` is a newer GCC whose binaries need a newer C++ runtime than the
+  one installed, so do not build with it. Set `CXX` to pick another compiler.
+- To run one node by hand: `./build/main -c <config> -n <node_id>`.
+- `configs/local-3nodes.txt` runs all three nodes on `localhost`.
 
 ## Results and correctness check
 
@@ -33,7 +41,7 @@ self), total and maximum response time, and its active duration.
 ## Stop an interrupted run
 
 ```bash
-./scripts/cleanup.sh "$config"
+./scripts/cleanup.sh configs/cluster-3nodes.txt
 ```
 
 ## Experiments

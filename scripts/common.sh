@@ -23,7 +23,7 @@ run_on_host() {
         local command
         # quote each argument before passing the command through the remote shell.
         printf -v command '%q ' bash "$@"
-        ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 \
+        ssh -o BatchMode=yes -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 \
             "$host" "$command"
     fi
 }
