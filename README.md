@@ -38,14 +38,26 @@ Successful runs require no cleanup.
 
 ## Experiments
 
-Each node prints a `METRICS` line at the end of a run with its message count, response times, and run duration. To repeat the experiments in the report and plot the results (requires matplotlib):
+Each node prints a `METRICS` line at the end of a run with its message count, response times, and run duration. The experiment scripts run many configs and collect those lines. They need Python 3, and plotting also needs matplotlib.
+
+The results in the report were produced with:
 
 ```bash
-./scripts/experiments.sh cluster 5 40
-python3 scripts/analyze.py results/<run>/raw.csv
+RESULTS_DIR=results/local ./scripts/experiments.sh local 5 40
+python3 scripts/analyze.py results/local/raw.csv
 ```
 
-The arguments are the number of runs per setting and the requests per node. Use `local` instead of `cluster` to run every node on one machine.
+`experiments.sh local 5 40` builds the program, then runs each setting 5 times with 40 requests per node. `local` runs every node on this machine; `cluster` spreads them across the `csa-dcXX` machines instead. It starts from n = 9, d = 20 ms, c = 10 ms (the handout example) and changes one value at a time:
+
+- n: 4, 9, 16, 25, 36 (grid quorums need a square number of nodes)
+- d: 5, 20, 50, 100, 200, 500 ms
+- c: 5, 10, 20, 40 ms
+
+Each run goes through the normal launcher, so it is also overlap-checked, and the script stops at the first failed run. The full set took about 12 minutes on a 4-core machine. Each node's `METRICS` line is appended to `raw.csv`, and the generated configs are saved in `configs/` next to it.
+
+`analyze.py` averages the runs for each setting into `summary.csv` and saves nine graphs in the same directory: messages per critical section, response time, and throughput against n, d, and c.
+
+`results/local/` holds the `raw.csv` and `summary.csv` used in the report. To run the experiments again without adding to that data, leave out `RESULTS_DIR`. The script then writes to a new `results/<timestamp>-local/` directory. A single setting can be run on its own by adding it as a last argument, for example `./scripts/experiments.sh local 5 40 n=16`.
 
 ## Notes
 
