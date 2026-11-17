@@ -1,69 +1,56 @@
-# CS/CE 6378 Project 2 — Maekawa Mutual Exclusion
+# Advanced Operating Systems Project 2
 
-Keven Diaz (kxd210034). C++17 implementation of Maekawa's algorithm with
-preemption, an automated overlap check, and the performance experiments. The
-experiment results are in the separate PDF report.
+This C++ program runs Maekawa's mutual exclusion algorithm with preemption and checks that no two nodes are ever in their critical sections at the same time. All nodes stop automatically after every node finishes its requests.
 
 ## Build and run
 
-On a `csa-dcXX.utdallas.edu` machine, from the project directory:
+On a UTD `csa-dcXX.utdallas.edu` machine, enter the project directory. It must be accessible at the same path on every configured host, with passwordless SSH between hosts. Check that the config file has the correct hostnames and available ports. Hostnames must be full names such as `csa-dc02.utdallas.edu`; short names like `dc02` do not resolve on the cluster. Sample configs are in `configs/`.
+
+Choose a config and run:
 
 ```bash
-./scripts/build.sh configs/cluster-3nodes.txt
-./scripts/launcher.sh configs/cluster-3nodes.txt
+config=configs/cluster-3nodes.txt
+./scripts/build.sh "$config"
+./scripts/launcher.sh "$config"
 ```
 
-`configs/cluster-3nodes.txt` runs nodes on csa-dc01, csa-dc02 and csa-dc03, port
-24100. Edit the hostnames and ports to use other machines or another config.
+The build uses `/usr/bin/g++`. The default `c++` on the cluster is a newer GCC that does not match the installed C++ runtime, so avoid building with it.
 
-- The project must be at the same path on every host (the home directory is
-  shared across the dc machines), with passwordless SSH from the launch host
-  to each configured host.
-- `build.sh` compiles with `/usr/bin/g++` when it exists. On the dc machines the
-  default `c++` is a newer GCC whose binaries need a newer C++ runtime than the
-  one installed, so do not build with it. Set `CXX` to pick another compiler.
-- Hostnames are used exactly as written and must resolve. On the cluster only
-  full names such as `csa-dc02.utdallas.edu` do; short names like `dc02` do not.
-- To run one node by hand: `./build/main -c <config> -n <node_id>`.
-- `configs/local-3nodes.txt` runs all three nodes on `localhost`.
+## Check results
 
-## Results and correctness check
+Logs are saved in `logs/<run_id>/`, which the launcher prints at the start of each run. Each node writes `node_<id>.log` with its critical section entries and exits.
 
-The launcher prints the run's log directory, `logs/<run-id>/`, with one
-`node_<id>.log` per node. The first configured node also runs an observer: each
-node reports entering and leaving its critical section and waits for an
-acknowledgement, and the observer fails the run if two nodes are ever inside at
-once or if entry/exit counts are wrong. Its result is in `observer.log`, and
-the launcher prints `CHECK PASS` only if every node exited cleanly and the check
-passed.
+The first node in the config also checks the run. Every node reports entering and leaving its critical section to it, and it writes the result to `observer.log`. The launcher prints `CHECK PASS` when every node finishes and no critical sections overlapped.
 
-Each node also prints a `METRICS` line: protocol messages sent (network and
-self), total and maximum response time, and its active duration.
+```bash
+tail -n 3 logs/<run_id>/observer.log
+```
 
 ## Stop an interrupted run
 
+If a run fails or needs to be stopped early:
+
 ```bash
-./scripts/cleanup.sh configs/cluster-3nodes.txt
+./scripts/cleanup.sh "$config"
 ```
+
+Successful runs require no cleanup.
 
 ## Experiments
 
+Each node prints a `METRICS` line at the end of a run with its message count, response times, and run duration. To repeat the experiments in the report and plot the results (requires matplotlib):
+
 ```bash
-./scripts/experiments.sh local 5 40      # or: cluster; args are repeats and requests per node
+./scripts/experiments.sh cluster 5 40
 python3 scripts/analyze.py results/<run>/raw.csv
 ```
 
-`experiments.sh` generates grid-quorum configs with `make_config.py`, varies
-n, d and c one at a time around n=9, d=20, c=10, and runs each through the
-launcher. `analyze.py` (needs matplotlib) averages the runs and plots messages
-per CS, response time and throughput.
+The arguments are the number of runs per setting and the requests per node. Use `local` instead of `cluster` to run every node on one machine.
 
 ## Notes
 
-- The parser expects one header line, n node lines and n quorum lines; the i-th
-  quorum line belongs to the i-th node, and every ID on it is a member.
-- The inter-request delay starts when a request is granted. If it runs out
-  during the critical section, the next request starts right after leaving.
-- Unlike the paper's step 2, a voter also sends FAILED to a waiting request
-  that a newer, higher-priority request overtakes. Without this a waiting
-  request could hold onto an INQUIRE forever and deadlock.
+A config has one header line, `n` node lines, and `n` quorum lines. The i-th quorum line belongs to the i-th node, and every ID on it is a quorum member.
+
+The next request's delay starts when the current request is granted. If it runs out during the critical section, the next request starts right after leaving.
+
+Unlike step 2 of the paper, a voter also sends `FAILED` to a waiting request that a newer, higher-priority request overtakes. Without this, a waiting request could hold an `INQUIRE` forever and deadlock.
