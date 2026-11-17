@@ -25,12 +25,23 @@ std::vector<OutgoingMessage> Voter::onRequest(RequestId request) {
     waiting_.insert(request);
     // an earlier queued request also makes the new requester fail.
     if (*holder_ < request || *waiting_.begin() < request) {
+        failed_.insert(request);
         return {reply(MessageType::Failed, request)};
     }
+    // the new request now precedes every waiting request. the paper's step 2 never tells a
+    // displaced waiter that it lost, so it could keep deferring an inquiry forever (deadlock).
+    std::vector<OutgoingMessage> outgoing;
+    for (const auto& pending : waiting_) {
+        if (!(pending == request) && failed_.insert(pending).second) {
+            outgoing.push_back(reply(MessageType::Failed, pending));
+        }
+    }
     // wait for the outstanding inquiry's release or relinquishment before sending another.
-    if (inquiryPending_) return {};
-    inquiryPending_ = true;
-    return {reply(MessageType::Inquire, *holder_)};
+    if (!inquiryPending_) {
+        inquiryPending_ = true;
+        outgoing.push_back(reply(MessageType::Inquire, *holder_));
+    }
+    return outgoing;
 }
 
 // reset inquiry state because the next vote belongs to a different request.
@@ -40,6 +51,7 @@ std::vector<OutgoingMessage> Voter::grantNext() {
     if (waiting_.empty()) return {};
     holder_ = *waiting_.begin();
     waiting_.erase(waiting_.begin());
+    failed_.erase(*holder_);
     return {reply(MessageType::Locked, *holder_)};
 }
 
@@ -54,7 +66,9 @@ std::vector<OutgoingMessage> Voter::handle(const Message& message) {
         case MessageType::Relinquish:
             if (!holder_ || !(*holder_ == request) || !inquiryPending_) return {};
             // choose the best request now, not necessarily the one that triggered inquiry.
+            // the relinquishing requester already counts this vote as unavailable.
             waiting_.insert(*holder_);
+            failed_.insert(*holder_);
             return grantNext();
         // a late release must not remove the vote granted to a newer request.
         case MessageType::Release:

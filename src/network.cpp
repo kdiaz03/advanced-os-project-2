@@ -13,6 +13,8 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -45,6 +47,13 @@ void prepareSocket(int fd) {
         throw socketError("SO_NOSIGPIPE");
     }
 #endif
+}
+
+// protocol frames are 24 bytes; without this, nagle's algorithm can hold a frame
+// until an earlier one is acknowledged, adding delay to every vote handoff.
+void disableNagle(int fd) {
+    const int enabled = 1;
+    if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enabled, sizeof(enabled)) < 0) throw socketError("TCP_NODELAY");
 }
 
 // compare parsed configuration values, independent of comments and whitespace.
@@ -185,6 +194,7 @@ void Network::acceptPeers(Deadline deadline) {
             throw socketError("accept");
         }
         prepareSocket(incoming.fd);
+        disableNagle(incoming.fd);
         const auto handshakeDeadline = std::min(deadline, std::chrono::steady_clock::now() + ioTimeout_);
         const uint32_t peerId = readGreeting(incoming.fd, handshakeDeadline);
         auto peer = peers_.find(peerId);
@@ -226,6 +236,7 @@ void Network::connectPeers(Deadline deadline) {
                     connected = error == 0 ? 0 : -1;
                 }
                 if (connected != 0) continue;
+                disableNagle(outgoing.fd);
                 const auto handshakeDeadline = std::min(deadline, std::chrono::steady_clock::now() + ioTimeout_);
                 writeGreeting(outgoing.fd, handshakeDeadline);
                 if (readGreeting(outgoing.fd, handshakeDeadline) != peerId) {

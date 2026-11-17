@@ -20,6 +20,8 @@ private:
     std::optional<RequestId> holder_;
     // the ordered set keeps the highest-priority waiting request first.
     std::set<RequestId> waiting_;
+    // waiting requests whose requester already knows it cannot win this vote yet.
+    std::set<RequestId> failed_;
     // remember completed requests too, so delayed duplicates remain stale.
     std::map<uint32_t, uint64_t> latestSequence_;
     bool inquiryPending_ = false;
